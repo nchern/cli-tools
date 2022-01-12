@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/mail"
 	"os"
+	"sort"
 
 	"github.com/DusanKasan/parsemail"
 )
@@ -47,10 +48,15 @@ func printAddrs(addrs []*mail.Address) {
 func usage() {
 	fmt.Fprintln(os.Stderr, "Pmail - Parse Mail - is a tool to extract parts of email from a raw SMTP message.")
 	fmt.Fprintln(os.Stderr, "The message is expected on stdin.")
-	fmt.Fprintf(os.Stderr, "\nUsage:\n\n\t%s <command>\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "\nThe commands are:")
+	fmt.Fprintf(os.Stderr, "\nUsage:\n\n\t%s <mail-part>\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "\nParts:")
 
+	sortedCmds := []string{}
 	for cmd := range commands {
+		sortedCmds = append(sortedCmds, cmd)
+	}
+	sort.Strings(sortedCmds)
+	for _, cmd := range sortedCmds {
 		fmt.Fprintf(os.Stderr, "\t%s\n", cmd)
 	}
 
