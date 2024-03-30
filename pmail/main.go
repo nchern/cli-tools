@@ -14,6 +14,7 @@ import (
 const (
 	cmdCC       = "cc"
 	cmdTo       = "to"
+	cmdID       = "id"
 	cmdBCC      = "bcc"
 	cmdFrom     = "from"
 	cmdSubject  = "subject"
@@ -32,6 +33,7 @@ var (
 		cmdCC:       func(m parsemail.Email) { printAddrs(m.Cc) },
 		cmdBCC:      func(m parsemail.Email) { printAddrs(m.Bcc) },
 		cmdTextBody: func(m parsemail.Email) { fmt.Println(m.TextBody) },
+		cmdID:       func(m parsemail.Email) { fmt.Println(m.MessageID) },
 	}
 )
 
