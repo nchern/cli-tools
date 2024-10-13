@@ -12,16 +12,25 @@ import (
 )
 
 const (
-	fgRed     Color = 31
-	fgGreen   Color = 32
-	fgYellow  Color = 33
-	fgMagenta Color = 35
 
-	fgHiRed     Color = 91
-	fgHiMagenta Color = 95
+	// 16 color palette
+	// fgRed     Color = 31
+	// fgGreen   Color = 32
+	// fgYellow  Color = 33
+	// fgMagenta Color = 35
+
+	// fgHiRed     Color = 91
+	// fgHiMagenta Color = 95
 
 	// bold      = "1"
 	// underline = "4"
+
+	// 256 color palette
+	orange      Color = 1
+	lightPurple Color = 13
+	darkYellow  Color = 178
+	lightGreen  Color = 48
+	darkOrange  Color = 202
 )
 
 // Color represents 256-term ANSI color
@@ -64,23 +73,31 @@ var (
 
 	entities = map[string]*Entity{
 		"number": {
-			color:   178,
+			color:   darkYellow,
 			matcher: &NumberMatcher{},
 		},
 		"error": {
-			color:   1,
+			color:   orange,
 			matcher: NewRegexpMatcher("(?i)error[:]?"),
 		},
+		"time": {
+			color:   lightGreen,
+			matcher: NewRegexpMatcher(`[0-9]{2}:[0-9]{2}:[0-9]{2}(\+[0-9]+?){0,1}$`),
+		},
+		"date": {
+			color:   lightGreen,
+			matcher: NewRegexpMatcher(`[0-9]{4}/[0-9]{2}/[0-9]{2}$`),
+		},
 		"iso_date_time": {
-			color:   48,
+			color:   lightGreen,
 			matcher: NewRegexpMatcher(`[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\+[0-9]+?){0,1}$`),
 		},
 		"ip_v4_addr": {
-			color:   202,
+			color:   darkOrange,
 			matcher: NewRegexpMatcher(`[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`),
 		},
 		"ip_v6_addr": {
-			color:   202,
+			color:   darkOrange,
 			matcher: NewRegexpMatcher(`^([0-9a-fA-F]{1,4}:){7}|(([0-9a-fA-F]{1,4}:){6}(:[0-9a-fA-F]{1,4}|((25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\.){3}([0-9]{1,3}))?|(([0-9a-fA-F]{1,4}:){5}:([0-9a-fA-F]{1,4})?)|(([0-9a-fA-F]{1,4}:){4}:(:[0-9a-fA-F]{1,4}){0,2}|((25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\.){3}([0-9]{1,3}))|(([0-9a-fA-F]{1,4}:){3}:(:[0-9a-fA-F]{1,4}){0,3}|((25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\.){3}([0-9]{1,3}))|(([0-9a-fA-F]{1,4}:){2}:(:[0-9a-fA-F]{1,4}){0,4}|((25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\.){3}([0-9]{1,3}))|(([0-9a-fA-F]{1,4}:){1}:([0-9a-fA-F]{1,4}){0,5}|((25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\.){3}([0-9]{1,3})))$`),
 		},
 	}
@@ -124,10 +141,11 @@ func process(r io.Reader) error {
 					break
 				}
 			}
+			// highlight **name=** in name=value pattern
 			l := len(toks) - 1
 			if l > -1 && !terminalSymbols[toks[l]] && cur == "=" {
-				toks[l] = colorize256(toks[l], 13)
-				cur = colorize256(cur, 13)
+				toks[l] = colorize256(toks[l], lightPurple)
+				cur = colorize256(cur, lightPurple)
 			}
 			toks = append(toks, cur)
 		}
@@ -142,12 +160,6 @@ func process(r io.Reader) error {
 func main() {
 	must(process(os.Stdin))
 }
-
-// func colorize(s string, color Color, attrs ...string) string {
-// RED='\033[0;31m'
-// return fmt.Sprintf("\033[0;%d;%sm%s\033[0m", color, strings.Join(attrs, ";"), s)
-// return fmt.Sprintf("\033[0;%dm%s\033[0m", color, s)
-// }
 
 func colorize256(s string, color Color, attrs ...string) string {
 	return fmt.Sprintf("\033[38;5;%dm%s\033[0m", color, s)
