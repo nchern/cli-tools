@@ -55,40 +55,43 @@ func parseDate(val, dateFmt string) (time.Time, error) {
 
 type Args struct {
 	Since    time.Time
+	sinceStr string
 	Until    time.Time
+	untilStr string
+
 	Format   string
 	FieldIdx int
 	Verbose  bool
 }
 
 func parseArgs() (*Args, error) {
-	since := flag.String("since", "", "start period")
-	until := flag.String("until", "now", "end period")
-	dateFmt := flag.String("format", "2006-01-02T15:04:05", "date and time format")
-	fieldIdx := flag.String("f", "1", "index of the date time field, starts with 1")
-	verbose := flag.Bool("v", false, "print out all line processing errors")
+	args := &Args{}
+
+	flag.StringVar(&args.sinceStr, "since", "", "start period")
+	flag.StringVar(&args.untilStr, "until", "now", "end period")
+	flag.StringVar(&args.Format, "format", "2006-01-02T15:04:05", "date and time format")
+	flag.IntVar(&args.FieldIdx, "f", 1, "index of the date time field, starts with 1")
+	flag.BoolVar(&args.Verbose, "v", false, "print out all line processing errors")
 	flag.Parse()
 
-	parsedSince, err := parseDate(*since, *dateFmt)
+	var err error
+	args.Since, err = parseDate(args.sinceStr, args.Format)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing --since: %v", err)
 	}
-
-	parsedUntil := time.Now().Local()
-	if *until != "now" {
-		parsedUntil, err = parseDate(*until, *dateFmt)
+	args.Until = time.Now().Local()
+	if args.untilStr != "now" {
+		args.Until, err = parseDate(args.untilStr, args.Format)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing --until: %v", err)
 		}
 	}
-
-	idx, err := strconv.Atoi(*fieldIdx)
-	if err != nil || idx <= 0 {
-		return nil, fmt.Errorf("%s should be greater than zero", *fieldIdx)
+	if err != nil || args.FieldIdx <= 0 {
+		return nil, fmt.Errorf("%d should be greater than zero", args.FieldIdx)
 	}
-	idx--
+	args.FieldIdx--
 
-	return &Args{Since: parsedSince, Until: parsedUntil, Format: *dateFmt, FieldIdx: idx, Verbose: *verbose}, nil
+	return args, nil
 }
 
 func shouldSkip(fields []string, args *Args) (bool, error) {
