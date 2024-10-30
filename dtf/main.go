@@ -19,7 +19,7 @@ var (
 
 func parseRelativeTime(val string) (time.Time, error) {
 	tokens := strings.Split(val, " ")
-	if len(tokens) != 3 {
+	if len(tokens) < 2 || len(tokens) > 3 {
 		return time.Time{}, fmt.Errorf("%s: bad relative time format", val)
 	}
 	n, err := strconv.Atoi(tokens[0])
@@ -29,13 +29,17 @@ func parseRelativeTime(val string) (time.Time, error) {
 	now := time.Now().Local()
 	unit := strings.TrimSuffix(tokens[1], "s")
 
+	if len(tokens) == 3 {
+		// N units ago case
+		n *= -1
+	}
 	switch unit {
 	case "sec":
-		return now.Add(-time.Duration(n) * time.Second), nil
+		return now.Add(time.Duration(n) * time.Second), nil
 	case "min":
-		return now.Add(-time.Duration(n) * time.Minute), nil
+		return now.Add(time.Duration(n) * time.Minute), nil
 	case "hour":
-		return now.Add(-time.Duration(n) * time.Hour), nil
+		return now.Add(time.Duration(n) * time.Hour), nil
 	case "day":
 		return now.AddDate(0, 0, -n), nil
 	default:
@@ -47,10 +51,14 @@ func parseDate(val, dateFmt string) (time.Time, error) {
 	if dateFmt == "" {
 		dateFmt = formats["iso"]
 	}
-	if strings.HasSuffix(val, " ago") {
+	return time.ParseInLocation(dateFmt, val, time.Local)
+}
+
+func parseDateArg(val, dateFmt string) (time.Time, error) {
+	if strings.HasSuffix(val, " ago") || strings.HasPrefix(val, "-") {
 		return parseRelativeTime(val)
 	}
-	return time.ParseInLocation(dateFmt, val, time.Local)
+	return parseDate(val, dateFmt)
 }
 
 type Args struct {
@@ -75,13 +83,13 @@ func parseArgs() (*Args, error) {
 	flag.Parse()
 
 	var err error
-	args.Since, err = parseDate(args.sinceStr, args.Format)
+	args.Since, err = parseDateArg(args.sinceStr, args.Format)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing --since: %v", err)
 	}
 	args.Until = time.Now().Local()
 	if args.untilStr != "now" {
-		args.Until, err = parseDate(args.untilStr, args.Format)
+		args.Until, err = parseDateArg(args.untilStr, args.Format)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing --until: %v", err)
 		}
