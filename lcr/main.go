@@ -70,7 +70,6 @@ var (
 		"]": true,
 		"(": true,
 		")": true,
-		"=": true,
 	}
 
 	entities = map[string]*Entity{
@@ -138,6 +137,16 @@ func tokenize(line string) <-chan string {
 	return toks
 }
 
+func colorizeEntity(cur string) (string, bool) {
+	for _, entity := range entities {
+		if entity.matcher.Match(cur) {
+			cur = colorize256(cur, entity.color)
+			return cur, true
+		}
+	}
+	return cur, false
+}
+
 func process(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
 	i := -1
@@ -151,11 +160,14 @@ func process(r io.Reader) error {
 					break
 				}
 			}
-			// highlight **name=** in name=value pattern
-			l := len(toks) - 1
-			if l > -1 && !terminalSymbols[toks[l]] && cur == "=" {
-				toks[l] = colorize256(toks[l], lightPurple)
-				cur = colorize256(cur, lightPurple)
+			// highlight **name=value** in a name=value pattern
+			if name, val, found := strings.Cut(cur, "="); found {
+				val, _ = colorizeEntity(val)
+				toks = append(toks,
+					colorize256(name, lightPurple),
+					colorize256("=", lightPurple),
+					val)
+				continue
 			}
 			toks = append(toks, cur)
 		}
