@@ -7,33 +7,40 @@ import (
 	"net/mail"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/DusanKasan/parsemail"
 )
 
 const (
-	cmdCC       = "cc"
-	cmdTo       = "to"
-	cmdID       = "id"
 	cmdBCC      = "bcc"
+	cmdCC       = "cc"
+	cmdDate     = "date"
 	cmdFrom     = "from"
-	cmdSubject  = "subject"
 	cmdHTMLBody = "html"
+	cmdID       = "id"
+	cmdSubject  = "subject"
 	cmdTextBody = "text"
+	cmdTo       = "to"
+
+	defaultDateFmt = time.RFC1123Z
 )
 
 type cmdFn func(parsemail.Email)
 
 var (
+	optTimeFormat = flag.String("f", defaultDateFmt, "date and time format in go notation")
+
 	commands = map[string]cmdFn{
-		cmdSubject:  func(m parsemail.Email) { fmt.Println(m.Subject) },
-		cmdHTMLBody: func(m parsemail.Email) { fmt.Println(m.HTMLBody) },
-		cmdFrom:     func(m parsemail.Email) { printAddrs(m.From) },
-		cmdTo:       func(m parsemail.Email) { printAddrs(m.To) },
-		cmdCC:       func(m parsemail.Email) { printAddrs(m.Cc) },
 		cmdBCC:      func(m parsemail.Email) { printAddrs(m.Bcc) },
-		cmdTextBody: func(m parsemail.Email) { fmt.Println(m.TextBody) },
+		cmdCC:       func(m parsemail.Email) { printAddrs(m.Cc) },
+		cmdDate:     func(m parsemail.Email) { fmt.Println(m.Date.Format(*optTimeFormat)) },
+		cmdFrom:     func(m parsemail.Email) { printAddrs(m.From) },
+		cmdHTMLBody: func(m parsemail.Email) { fmt.Println(m.HTMLBody) },
 		cmdID:       func(m parsemail.Email) { fmt.Println(m.MessageID) },
+		cmdSubject:  func(m parsemail.Email) { fmt.Println(m.Subject) },
+		cmdTextBody: func(m parsemail.Email) { fmt.Println(m.TextBody) },
+		cmdTo:       func(m parsemail.Email) { printAddrs(m.To) },
 	}
 )
 
@@ -61,7 +68,7 @@ func usage() {
 	for _, cmd := range sortedCmds {
 		fmt.Fprintf(os.Stderr, "\t%s\n", cmd)
 	}
-
+	fmt.Println("Flags:")
 	flag.PrintDefaults()
 }
 
@@ -73,8 +80,8 @@ func init() {
 
 func main() {
 	cmd := cmdTextBody
-	if len(os.Args) > 1 {
-		cmd = os.Args[1]
+	if len(flag.Args()) > 0 {
+		cmd = flag.Args()[0]
 	}
 
 	fn, found := commands[cmd]
