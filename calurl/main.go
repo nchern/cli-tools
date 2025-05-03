@@ -10,23 +10,28 @@ import (
 	"time"
 )
 
-var (
+const (
 	defaultDuration = "30m"
 	defaultProvider = "google"
+)
 
-	flagTitle    = flag.String("t", "", "Event title (required)")
-	flagStart    = flag.String("s", "", "Start datetime (YYYY-MM-DDTHH:MM, required)")
-	flagDuration = flag.String("u", defaultDuration, "Event duration (required)")
-	flagLocation = flag.String("l", "", "Location")
+var (
 	flagDesc     = flag.String("d", "", "Description")
+	flagDuration = flag.String("u", defaultDuration, "Event duration (required)")
+	flagGuests   = flag.String("g", "",
+		"A list of guests, comma-separated emails. E.g. elf1@example.com,elf2@example.com")
+	flagLocation = flag.String("l", "", "Location")
+	flagProvider = flag.String("p", defaultProvider, "Provider: google|outlook|apple")
+	flagStart    = flag.String("s", "", "Start datetime (YYYY-MM-DDTHH:MM, required)")
 	flagTimezone = flag.String("z", "", "Timezone (default: system local)")
-	flagProvider = flag.String("p", defaultProvider, "Provider: google|outlook|apple (default: google)")
+	flagTitle    = flag.String("t", "", "Event title (required)")
 )
 
 type event struct {
-	title    string
 	desc     string
+	guests   string
 	location string
+	title    string
 
 	start time.Time
 	end   time.Time
@@ -39,7 +44,7 @@ func init() {
 func main() {
 	eventURL, err := mkUrl()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %s", err)
+		fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
 		os.Exit(1)
 	}
 	fmt.Println(eventURL.String())
@@ -62,9 +67,10 @@ func parseAndValidate() (*event, error) {
 		return nil, fmt.Errorf("bad duration: %w", err)
 	}
 	return &event{
-		title:    *flagTitle,
 		desc:     *flagDesc,
+		guests:   strings.TrimSpace(*flagGuests),
 		location: *flagLocation,
+		title:    *flagTitle,
 
 		start: startTime,
 		end:   startTime.Add(d),
@@ -138,6 +144,9 @@ func mkGoogleURL(evt *event) (*url.URL, error) {
 	}
 	if evt.desc != "" {
 		params.Set("details", evt.desc)
+	}
+	if evt.guests != "" {
+		params.Set("add", evt.guests)
 	}
 	u.RawQuery = params.Encode()
 	return u, nil
