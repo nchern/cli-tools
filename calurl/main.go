@@ -5,18 +5,22 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var (
+	defaultDuration = "30m"
+	defaultProvider = "google"
+
 	flagTitle    = flag.String("t", "", "Event title (required)")
 	flagStart    = flag.String("s", "", "Start datetime (YYYY-MM-DDTHH:MM, required)")
-	flagEnd      = flag.String("e", "", "End datetime (YYYY-MM-DDTHH:MM, required)")
+	flagDuration = flag.String("u", defaultDuration, "Event duration (required)")
 	flagLocation = flag.String("l", "", "Location")
 	flagDesc     = flag.String("d", "", "Description")
 	flagTimezone = flag.String("z", "", "Timezone (default: system local)")
-	flagProvider = flag.String("p", "google", "Provider: google|outlook|apple (default: google)")
+	flagProvider = flag.String("p", defaultProvider, "Provider: google|outlook|apple (default: google)")
 )
 
 type event struct {
@@ -42,8 +46,8 @@ func main() {
 }
 
 func parseAndValidate() (*event, error) {
-	if *flagTitle == "" || *flagStart == "" || *flagEnd == "" {
-		return nil, fmt.Errorf("-t, -s, and -e are required")
+	if *flagTitle == "" || *flagStart == "" {
+		return nil, fmt.Errorf("-t, and -s are required")
 	}
 	loc, err := parseTimezone(*flagTimezone)
 	if err != nil {
@@ -53,9 +57,9 @@ func parseAndValidate() (*event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bad start time: %w", err)
 	}
-	endTime, err := parseTime(*flagEnd, loc)
+	d, err := parseDuration(*flagDuration)
 	if err != nil {
-		return nil, fmt.Errorf("bad end time: %w", err)
+		return nil, fmt.Errorf("bad duration: %w", err)
 	}
 	return &event{
 		title:    *flagTitle,
@@ -63,7 +67,7 @@ func parseAndValidate() (*event, error) {
 		location: *flagLocation,
 
 		start: startTime,
-		end:   endTime,
+		end:   startTime.Add(d),
 	}, nil
 }
 
@@ -81,6 +85,26 @@ func mkUrl() (*url.URL, error) {
 		return mkAppleURL(evt)
 	}
 	return nil, fmt.Errorf("unknown provider: %s", *flagProvider)
+}
+
+func parseDuration(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty duration string")
+	}
+	if val, err := strconv.Atoi(s); err == nil {
+		// val is a correct number without units
+		// use minutes by default
+		return time.Duration(val) * time.Minute, nil
+	}
+	if strings.HasSuffix(s, "d") {
+		val, err := strconv.Atoi(s[:len(s)-1])
+		if err != nil {
+			return 0, fmt.Errorf("invalid number in duration: %w", err)
+		}
+		return time.Duration(val) * 24 * time.Hour, nil
+	}
+	// handle units like: 1h, 20m or 3s
+	return time.ParseDuration(s)
 }
 
 func parseTimezone(tz string) (*time.Location, error) {
