@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nchern/cli-tools/calurl/timex"
 )
 
 const (
@@ -22,9 +24,11 @@ var (
 		"A list of guests, comma-separated emails. E.g. elf1@example.com,elf2@example.com")
 	flagLocation = flag.String("l", "", "Location")
 	flagProvider = flag.String("p", defaultProvider, "Provider: google|outlook|apple")
-	flagStart    = flag.String("s", "", "Start datetime (YYYY-MM-DDTHH:MM, required)")
 	flagTimezone = flag.String("z", "", "Timezone (default: system local)")
 	flagTitle    = flag.String("t", "", "Event title (required)")
+	flagWhen     = flag.String("w", "",
+		"When event happens (reqiured). Either start datetime (YYYY-MM-DDTHH:MM) "+
+			"or human readable string like 'next monday at 11:30am'")
 )
 
 type event struct {
@@ -51,14 +55,14 @@ func main() {
 }
 
 func parseAndValidate() (*event, error) {
-	if *flagTitle == "" || *flagStart == "" {
-		return nil, fmt.Errorf("-t, and -s are required")
+	if *flagTitle == "" || *flagWhen == "" {
+		return nil, fmt.Errorf("-t and -w are required")
 	}
 	loc, err := parseTimezone(*flagTimezone)
 	if err != nil {
 		return nil, fmt.Errorf("bad timezone: %w", err)
 	}
-	startTime, err := parseTime(*flagStart, loc)
+	startTime, err := parseTime(*flagWhen, loc)
 	if err != nil {
 		return nil, fmt.Errorf("bad start time: %w", err)
 	}
@@ -98,8 +102,7 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("empty duration string")
 	}
 	if val, err := strconv.Atoi(s); err == nil {
-		// val is a correct number without units
-		// use minutes by default
+		// val is a correct number without units - use minutes by default
 		return time.Duration(val) * time.Minute, nil
 	}
 	if strings.HasSuffix(s, "d") {
@@ -120,8 +123,9 @@ func parseTimezone(tz string) (*time.Location, error) {
 	return time.LoadLocation(tz)
 }
 
-func parseTime(datetime string, loc *time.Location) (time.Time, error) {
-	return time.ParseInLocation("2006-01-02T15:04", datetime, loc)
+func parseTime(s string, loc *time.Location) (time.Time, error) {
+	// return time.ParseInLocation("2006-01-02T15:04", datetime, loc)
+	return timex.ParseHuman(time.Now().In(loc), s)
 }
 
 func formatICS(t time.Time) string {
