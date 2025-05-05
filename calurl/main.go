@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +30,19 @@ var (
 	flagWhen     = flag.String("w", "",
 		"When event happens (reqiured). Either start datetime (YYYY-MM-DDTHH:MM) "+
 			"or human readable string like 'next monday at 11:30am'")
+
+	flagOpen = flag.Bool("o", false,
+		"Open an url in browser instead of printing it out. "+
+			fmt.Sprintf("Uses $VIEWER(%s) to open urls", getViewer()))
 )
+
+func getViewer() string {
+	v := os.Getenv("VIEWER")
+	if v == "" {
+		return "xdg-open"
+	}
+	return v
+}
 
 type event struct {
 	desc     string
@@ -45,11 +58,30 @@ func init() {
 	flag.Parse()
 }
 
-func main() {
-	eventURL, err := mkUrl()
+func must(err error) {
+	dieIf(err)
+}
+
+func dieIf(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
 		os.Exit(1)
+	}
+}
+
+func openURL(u *url.URL) error {
+	cmd := exec.Command(getViewer(), u.String())
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func main() {
+	eventURL, err := mkUrl()
+	dieIf(err)
+	if *flagOpen {
+		must(openURL(eventURL))
+		return
 	}
 	fmt.Println(eventURL.String())
 }
