@@ -67,30 +67,6 @@ func ParseHuman(now time.Time, s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("no time specified with 'at'")
 }
 
-func parseAfterNext(tokens []string, baseDate time.Time, i *int) (time.Time, error) {
-	for *i < len(tokens) {
-		switch tokens[*i] {
-		case "day":
-			*i += 1
-			return baseDate.AddDate(0, 0, 1), nil
-		case "week":
-			*i += 1
-			return baseDate.AddDate(0, 0, 7), nil
-		case "mon", "monday", "tue", "tuesday", "wed", "wednesday",
-			"thu", "thursday", "fri", "friday", "sat", "saturday", "sun", "sunday":
-			targetDow, ok := weekdayFromString(tokens[*i])
-			if !ok {
-				return time.Time{}, fmt.Errorf("unknown weekday: %s", tokens[*i])
-			}
-			*i += 1
-			return nextWeekday(baseDate, targetDow), nil
-		default:
-			return time.Time{}, fmt.Errorf("unknown token after 'next': %s", tokens[*i])
-		}
-	}
-	return time.Time{}, fmt.Errorf("'next' requires additional token")
-}
-
 func weekdayFromString(s string) (time.Weekday, bool) {
 	switch s {
 	case "sun", "sunday":
