@@ -56,6 +56,34 @@ func TestParseHumanShould(t *testing.T) {
 			given:    "at 11:33",
 			expected: time.Date(2025, 5, 1, 11, 33, 0, 0, time.UTC),
 		},
+		{
+			given:    "jul 17th",
+			expected: time.Date(2025, 7, 17, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "august 2nd at 14:00",
+			expected: time.Date(2025, 8, 2, 14, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "jul 3rd at 10am",
+			expected: time.Date(2025, 7, 3, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "dec 31 at 23:00",
+			expected: time.Date(2025, 12, 31, 23, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "in 3 days at 10am",
+			expected: time.Date(2025, 5, 4, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "in 1 week",
+			expected: time.Date(2025, 5, 8, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			given:    "in 2 weeks at 13:00",
+			expected: time.Date(2025, 5, 15, 13, 0, 0, 0, time.UTC),
+		},
 	}
 
 	for _, tt := range tests {
