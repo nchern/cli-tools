@@ -28,6 +28,11 @@ func ParseHuman(now time.Time, s string) (time.Time, error) {
 
 	i := 0
 	for i < len(tokens) {
+		if t, err := time.ParseInLocation("2006-01-02", tokens[i], loc); err == nil {
+			i++
+			baseDate = t
+			continue
+		}
 		switch tokens[i] {
 		case "today":
 			i++

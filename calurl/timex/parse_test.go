@@ -17,6 +17,10 @@ func TestParseHumanShould(t *testing.T) {
 			expected: time.Date(2025, 5, 3, 14, 17, 0, 0, time.UTC),
 		},
 		{
+			given:    "2025-05-03 at 14:10",
+			expected: time.Date(2025, 5, 3, 14, 10, 0, 0, time.UTC),
+		},
+		{
 			given:    "tomorrow at 10am",
 			expected: time.Date(2025, 5, 2, 10, 0, 0, 0, time.UTC),
 		},
