@@ -53,8 +53,8 @@ func TestParseHumanShould(t *testing.T) {
 			expected: time.Date(2025, 5, 1, 19, 0, 0, 0, time.UTC),
 		},
 		{
-			given:    "at 11:33",
-			expected: time.Date(2025, 5, 1, 11, 33, 0, 0, time.UTC),
+			given:    "2025-06-12 at 15:48",
+			expected: time.Date(2025, 6, 12, 15, 48, 0, 0, time.UTC),
 		},
 		{
 			given:    "jul 17th",
