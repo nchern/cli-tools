@@ -143,6 +143,20 @@ func run() error {
 }
 
 func main() {
+	flag.Usage = func() {
+		fmt.Printf("%s - filters data on stdin treating fields within lines as dates.\n",
+			os.Args[0])
+		fmt.Println("Currently supports whitespaces as field separator.")
+		fmt.Println()
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Println()
+		fmt.Println("TIME FORMAT SHORTCUTS")
+		for k, v := range formats {
+			fmt.Printf("\t* %s (%v)\n", k, v)
+		}
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
 		os.Exit(1)
