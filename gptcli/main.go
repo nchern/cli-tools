@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 var (
 	keyPath = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model   = flag.String("m", defaultModel, "model name")
+	timeout = flag.Int("t", 30, "API timeout in seconds")
 )
 
 func homePath() string {
@@ -42,7 +44,7 @@ func apiKey() (string, error) {
 }
 
 func makePayload(model, prompt string) []byte {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
@@ -67,10 +69,11 @@ func complete(key string, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +87,6 @@ func complete(key string, data []byte) (string, error) {
 		}
 		return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
 	}
-
 	var respData struct {
 		Choices []struct {
 			Message struct {
