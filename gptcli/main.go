@@ -11,25 +11,30 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 )
 
 const (
-	defaultModel = "gpt-4.1-mini"
+	defaultKeyFile = ".openapi.key"
+	defaultModel   = "gpt-4.1-mini"
 
 	url = "https://api.openai.com/v1/chat/completions"
 )
 
 var (
-	model = flag.String("m", defaultModel, "model name")
+	keyPath = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
+	model   = flag.String("m", defaultModel, "model name")
 )
 
-func apiKey() (string, error) {
+func homePath() string {
 	u, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(u.HomeDir + "/.openapi.key")
+	dieIf(err)
+	return u.HomeDir
+}
+
+func apiKey() (string, error) {
+	data, err := os.ReadFile(*keyPath)
 	if err != nil {
 		return "", err
 	}
@@ -114,6 +119,7 @@ func main() {
 	data := makePayload(*model, prompt)
 	resp, err := complete(key, data)
 	dieIf(err)
+
 	fmt.Println(resp)
 }
 
