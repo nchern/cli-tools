@@ -43,19 +43,6 @@ func apiKey() (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func makePayload(model, prompt string) []byte {
-	payload := map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"stream": false,
-	}
-	data, err := json.Marshal(payload)
-	dieIf(err)
-	return data
-}
-
 func readPrompt(args []string) string {
 	if len(args) == 0 {
 		data, _ := io.ReadAll(os.Stdin)
@@ -64,8 +51,20 @@ func readPrompt(args []string) string {
 	return strings.Join(args, " ")
 }
 
-func complete(key string, data []byte) (string, error) {
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+func complete(key string, prompt string) (string, error) {
+	payload := map[string]any{
+		"model": *model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"stream": false,
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("POST", url, &buf)
 	if err != nil {
 		return "", err
 	}
@@ -118,8 +117,7 @@ func main() {
 	key, err := apiKey()
 	dieIf(err)
 
-	data := makePayload(*model, prompt)
-	resp, err := complete(key, data)
+	resp, err := complete(key, prompt)
 	dieIf(err)
 
 	fmt.Println(resp)
