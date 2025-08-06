@@ -1,4 +1,4 @@
-package timex
+package parse
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"unicode"
 )
 
-// ParseHuman parses:
+// Human parses human-readable dates:
 // 1. "YYYY-MM-DDTHH:MM"
 // 2. "tomorrow at 10am"
 // 3. "next mon at 9am"
 // 4. "next week at 14:00"
-func ParseHuman(now time.Time, s string) (time.Time, error) {
+func Human(now time.Time, s string) (time.Time, error) {
 	loc := now.Location()
 
 	// Try direct layout first

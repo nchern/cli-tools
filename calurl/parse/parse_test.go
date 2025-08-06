@@ -1,4 +1,4 @@
-package timex
+package parse
 
 import (
 	"testing"
@@ -89,7 +89,7 @@ func TestParseHumanShould(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt // capture loop variable
 		t.Run(tt.given, func(t *testing.T) {
-			got, err := ParseHuman(now, tt.given)
+			got, err := Human(now, tt.given)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -114,7 +114,7 @@ func TestParseHumanShouldFailOn(t *testing.T) {
 	for _, given := range tests {
 		given := given
 		t.Run(given, func(t *testing.T) {
-			_, err := ParseHuman(now, given)
+			_, err := Human(now, given)
 			if err == nil {
 				t.Errorf("expected error, got nil")
 			}

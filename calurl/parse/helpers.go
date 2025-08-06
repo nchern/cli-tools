@@ -1,4 +1,4 @@
-package timex
+package parse
 
 import (
 	"fmt"
@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-func ParseDuration(s string) (time.Duration, error) {
+// Duration parses human readable durations
+func Duration(s string) (time.Duration, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty duration string")
 	}
@@ -26,7 +27,8 @@ func ParseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
-func ParseTimezone(tz string) (*time.Location, error) {
+// Timezone parses timezones
+func Timezone(tz string) (*time.Location, error) {
 	if tz == "" {
 		return time.Now().Location(), nil
 	}

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nchern/cli-tools/calurl/parse"
 	"github.com/nchern/cli-tools/calurl/providers"
-	"github.com/nchern/cli-tools/calurl/timex"
 )
 
 const (
@@ -82,7 +82,7 @@ func parseAndValidate() (*providers.Event, error) {
 	if *flagTitle == "" || *flagWhen == "" {
 		return nil, fmt.Errorf("-t and -w are required")
 	}
-	loc, err := timex.ParseTimezone(*flagTimezone)
+	loc, err := parse.Timezone(*flagTimezone)
 	if err != nil {
 		return nil, fmt.Errorf("bad timezone: %w", err)
 	}
@@ -90,7 +90,7 @@ func parseAndValidate() (*providers.Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bad start time: %w", err)
 	}
-	d, err := timex.ParseDuration(*flagDuration)
+	d, err := parse.Duration(*flagDuration)
 	if err != nil {
 		return nil, fmt.Errorf("bad duration: %w", err)
 	}
@@ -118,5 +118,5 @@ func mkUrl(evt *providers.Event) (*url.URL, error) {
 }
 
 func parseTime(s string, loc *time.Location) (time.Time, error) {
-	return timex.ParseHuman(time.Now().In(loc), s)
+	return parse.Human(time.Now().In(loc), s)
 }
