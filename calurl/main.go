@@ -86,7 +86,7 @@ func parseAndValidate() (*providers.Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bad timezone: %w", err)
 	}
-	startTime, err := parseTime(*flagWhen, loc)
+	startTime, err := parse.Human(time.Now().In(loc), *flagWhen)
 	if err != nil {
 		return nil, fmt.Errorf("bad start time: %w", err)
 	}
@@ -115,8 +115,4 @@ func mkUrl(evt *providers.Event) (*url.URL, error) {
 		return providers.AppleURL(evt)
 	}
 	return nil, fmt.Errorf("unknown provider: %s", *flagProvider)
-}
-
-func parseTime(s string, loc *time.Location) (time.Time, error) {
-	return parse.Human(time.Now().In(loc), s)
 }
