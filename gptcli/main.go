@@ -24,9 +24,10 @@ const (
 )
 
 var (
-	keyPath = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
-	model   = flag.String("m", defaultModel, "model name")
-	timeout = flag.Int("t", 30, "API timeout in seconds")
+	instructionPath = flag.String("i", "", "path to file with instructions to LLM")
+	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
+	model           = flag.String("m", defaultModel, "model name")
+	timeout         = flag.Int("t", 30, "API timeout in seconds")
 )
 
 func homePath() string {
@@ -37,6 +38,17 @@ func homePath() string {
 
 func apiKey() (string, error) {
 	data, err := os.ReadFile(*keyPath)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func readInstructions() (string, error) {
+	if *instructionPath == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(*instructionPath)
 	if err != nil {
 		return "", err
 	}
@@ -78,8 +90,7 @@ func NewMessage(role Role, s string) *Message {
 	return &Message{Role: role, Content: s}
 }
 
-func newRequest(key string, payload interface{}) (*http.Request, error) {
-
+func newRequest(key string, payload any) (*http.Request, error) {
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
 		return nil, err
@@ -108,13 +119,26 @@ func parse(resp *http.Response) (string, error) {
 	return "", nil
 }
 
-func complete(key string, prompt string) (string, error) {
+func handleError(req *http.Request, resp *http.Response) (string, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	} else {
+		fmt.Fprintln(os.Stderr, string(body))
+	}
+	return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
+}
+
+func complete(key string, instructions string, prompt string) (string, error) {
+	messages := []*Message{}
+	if instructions != "" {
+		messages = append(messages, NewMessage(System, instructions))
+	}
+	messages = append(messages, NewMessage(User, prompt))
 	payload := map[string]any{
-		"model": *model,
-		"messages": []*Message{
-			NewMessage(User, prompt),
-		},
-		"stream": false,
+		"stream":   false,
+		"model":    *model,
+		"messages": messages,
 	}
 	req, err := newRequest(key, payload)
 	if err != nil {
@@ -127,13 +151,7 @@ func complete(key string, prompt string) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-		} else {
-			fmt.Fprintln(os.Stderr, string(body))
-		}
-		return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
+		return handleError(req, resp)
 	}
 	return parse(resp)
 }
@@ -153,7 +171,10 @@ func main() {
 	key, err := apiKey()
 	dieIf(err)
 
-	resp, err := complete(key, prompt)
+	instructions, err := readInstructions()
+	dieIf(err)
+
+	resp, err := complete(key, instructions, prompt)
 	dieIf(err)
 
 	fmt.Println(resp)
