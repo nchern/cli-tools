@@ -51,26 +51,75 @@ func readPrompt(args []string) string {
 	return strings.Join(args, " ")
 }
 
-func complete(key string, prompt string) (string, error) {
-	payload := map[string]any{
-		"model": *model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"stream": false,
-	}
+// Role represents a role in LLM chat
+type Role string
+
+const (
+	// User - message from a human user
+	User Role = "user"
+	// Assistant - message from an AI assistant
+	Assistant Role = "assistant"
+	// System - setup instructions or behavior context
+	System Role = "system"
+	// Examples:
+	//    { "role": "system", "content": "You are a helpful assistant." },
+	//    { "role": "user", "content": "What's 5 + 3?" },
+	//    { "role": "assistant", "content": "8" }
+)
+
+// Message represents a message for LLM
+type Message struct {
+	Role    Role   `json:"role"`
+	Content string `json:"content"`
+}
+
+// NewMessage creates a new instance of a message
+func NewMessage(role Role, s string) *Message {
+	return &Message{Role: role, Content: s}
+}
+
+func newRequest(key string, payload interface{}) (*http.Request, error) {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
-		return "", err
+		return nil, err
 	}
 	req, err := http.NewRequest("POST", url, &buf)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
 
+func parse(resp *http.Response) (string, error) {
+	var respData struct {
+		Choices []struct {
+			Message Message `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return "", err
+	}
+	for _, choice := range respData.Choices {
+		return choice.Message.Content, nil
+	}
+	return "", nil
+}
+
+func complete(key string, prompt string) (string, error) {
+	payload := map[string]any{
+		"model": *model,
+		"messages": []*Message{
+			NewMessage(User, prompt),
+		},
+		"stream": false,
+	}
+	req, err := newRequest(key, payload)
+	if err != nil {
+		return "", err
+	}
 	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -86,20 +135,7 @@ func complete(key string, prompt string) (string, error) {
 		}
 		return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
 	}
-	var respData struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
-		return "", err
-	}
-	for _, choice := range respData.Choices {
-		return choice.Message.Content, nil
-	}
-	return "", nil
+	return parse(resp)
 }
 
 func init() {
