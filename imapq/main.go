@@ -82,8 +82,7 @@ func dieOnNetError(v ...interface{}) {
 	for _, it := range v {
 		switch err := it.(type) {
 		case error:
-			log.Printf("fatal: dieOnNetError: %T %s", err, err)
-			os.Exit(errorToExitCode(err))
+			dieIf(err)
 		}
 	}
 }
@@ -217,7 +216,8 @@ func readPassword() (string, error) {
 
 func dieIf(err error) {
 	if err != nil {
-		log.Fatalf("fatal: %T %s", err, err)
+		log.Printf("fatal: %T %s", err, err)
+		os.Exit(errorToExitCode(err))
 	}
 }
 
