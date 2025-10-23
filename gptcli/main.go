@@ -24,7 +24,8 @@ const (
 )
 
 var (
-	instructionPath = flag.String("i", "", "path to file with instructions to LLM")
+	instructionText = flag.String("i", "", "instruction to LLM in text form")
+	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
@@ -45,6 +46,9 @@ func apiKey() (string, error) {
 }
 
 func readInstructions() (string, error) {
+	if *instructionText != "" {
+		return *instructionText, nil
+	}
 	if *instructionPath == "" {
 		return "", nil
 	}
