@@ -23,8 +23,6 @@ const (
 
 	// /usr/include/sysexits.h:101: EX_UNAVAILABLE - service unavailable
 	exitUnavailable = 69
-
-	url = "https://api.openai.com/v1/chat/completions"
 )
 
 type stringFlags []string
@@ -46,6 +44,7 @@ var (
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
+	url             = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
 )
 
 func homePath() string {
@@ -116,7 +115,7 @@ func newRequest(key string, payload any) (*http.Request, error) {
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", url, &buf)
+	req, err := http.NewRequest("POST", *url, &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -127,13 +126,21 @@ func newRequest(key string, payload any) (*http.Request, error) {
 
 func parse(resp *http.Response) (string, error) {
 	var respData struct {
+		// OpenAI response
 		Choices []struct {
 			Message Message `json:"message"`
 		} `json:"choices"`
+		// Ollama response
+		Message *Message `json:"message"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
 		return "", err
 	}
+	// handle Ollama response
+	if respData.Message != nil {
+		return respData.Message.Content, nil
+	}
+	// handle OpenAI response
 	for _, choice := range respData.Choices {
 		return choice.Message.Content, nil
 	}
@@ -147,7 +154,7 @@ func handleError(req *http.Request, resp *http.Response) (string, error) {
 	} else {
 		fmt.Fprintln(os.Stderr, string(body))
 	}
-	return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
+	return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, *url)
 }
 
 func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*Message, error) {
