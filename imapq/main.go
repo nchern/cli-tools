@@ -32,7 +32,7 @@ func (d *dateFlag) String() string {
 	if d == nil || time.Time(*d) == zeroTime {
 		return "empty"
 	}
-	return fmt.Sprintf("%s", time.Time(*d))
+	return time.Time(*d).String()
 }
 
 func (d *dateFlag) Set(value string) error {
@@ -55,7 +55,7 @@ func (s *imapFlags) String() string {
 		return "none"
 	}
 	var flags []string
-	for k, _ := range *s {
+	for k := range *s {
 		flags = append(flags, k)
 	}
 	return strings.Join(flags, ", ")
