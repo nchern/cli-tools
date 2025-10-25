@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -19,6 +20,9 @@ import (
 const (
 	defaultKeyFile = ".openapi.key"
 	defaultModel   = "gpt-4.1-mini"
+
+	// /usr/include/sysexits.h:101: EX_UNAVAILABLE - service unavailable
+	exitUnavailable = 69
 
 	url = "https://api.openai.com/v1/chat/completions"
 )
@@ -186,6 +190,18 @@ func complete(key string, messages []*Message) (string, error) {
 	return parse(resp)
 }
 
+func errorToExitCode(err error) int {
+	if os.IsTimeout(err) {
+		return exitUnavailable
+	}
+	if opErr, ok := err.(*net.OpError); ok {
+		if opErr.Temporary() || opErr.Timeout() {
+			return exitUnavailable
+		}
+	}
+	return 1
+}
+
 func prepare() (string, []*Message, error) {
 	prompt := readPrompt(flag.Args())
 	if prompt == "" {
@@ -209,7 +225,7 @@ func prepare() (string, []*Message, error) {
 func init() {
 	log.SetFlags(0)
 
-	flag.Var(&attachments, "a", "attach a file to prompt, supports multiple flags")
+	flag.Var(&attachments, "a", "attach a file to prompt, multiple attachments are supported")
 	flag.Parse()
 }
 
@@ -227,6 +243,7 @@ func must(err error) { dieIf(err) }
 
 func dieIf(err error) {
 	if err != nil {
-		log.Fatalf("fatal: %s", err)
+		log.Printf("fatal: %s", err)
+		os.Exit(errorToExitCode(err))
 	}
 }
