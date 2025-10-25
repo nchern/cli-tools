@@ -26,7 +26,37 @@ const (
 	exitUnavailable = 69
 )
 
+type dateFlag time.Time
+
+func (d *dateFlag) String() string {
+	if d == nil || time.Time(*d) == zeroTime {
+		return "empty"
+	}
+	return fmt.Sprintf("%s", time.Time(*d))
+}
+
+func (d *dateFlag) Set(value string) error {
+	var v time.Time
+	var err error
+	for _, ft := range supportedFormats {
+		v, err = time.Parse(ft, value)
+		if err == nil {
+			*d = dateFlag(v)
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: date in unsupported format", value)
+}
+
 var (
+	zeroTime         = time.UnixMicro(0)
+	supportedFormats = []string{
+		time.RFC822,
+		time.RFC1123,
+		time.RFC3339,
+		"2006-01-02",
+	}
+
 	appHomeDir string
 	cacheDir   string
 
@@ -36,7 +66,8 @@ var (
 	passwordArg       = flag.String("pass", "", "IMAP password")
 	userArg           = flag.String("user", "", "IMAP user")
 	maxMailFetchCount = flag.Int("m", 100, "Maximum number of messages to fetch")
-	// persist           = flag.Bool("persist", false, "Persit results to file")
+
+	since = dateFlag(zeroTime)
 )
 
 type letter struct {
@@ -62,6 +93,9 @@ func letterFromMessage(m *imap.Message) *letter {
 
 func init() {
 	log.SetFlags(0)
+	sinceHelp := "fetch messages later than this date. Supported formats:\n" +
+		"- " + strings.Join(supportedFormats, "\n- ")
+	flag.Var(&since, "since", sinceHelp)
 
 	must(initPaths())
 }
@@ -165,7 +199,7 @@ func fetchMails(c *client.Client, name string, ids []uint32) ([]*imap.Message, e
 	return messages, nil
 }
 
-func fetch() ([]*letter, error) {
+func fetch(since time.Time) ([]*letter, error) {
 	passwd, err := readPassword()
 	if err != nil {
 		return nil, err
@@ -177,7 +211,9 @@ func fetch() ([]*letter, error) {
 	defer c.Logout()
 	q := imap.NewSearchCriteria()
 	q.WithoutFlags = []string{imap.SeenFlag}
-
+	if since != zeroTime {
+		q.Since = since
+	}
 	ids, err := c.Search(q)
 	if err != nil {
 		return nil, err
@@ -196,7 +232,7 @@ func fetch() ([]*letter, error) {
 func main() {
 	flag.Parse()
 
-	letters, err := fetch()
+	letters, err := fetch(time.Time(since))
 	dieIf(err)
 
 	enc := json.NewEncoder(os.Stdout)
