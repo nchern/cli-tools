@@ -48,6 +48,28 @@ func (d *dateFlag) Set(value string) error {
 	return fmt.Errorf("%s: date in unsupported format", value)
 }
 
+type imapFlags map[string]string
+
+func (s *imapFlags) String() string {
+	if s == nil {
+		return "none"
+	}
+	var flags []string
+	for k, _ := range *s {
+		flags = append(flags, k)
+	}
+	return strings.Join(flags, ", ")
+}
+
+func (s *imapFlags) Set(value string) error {
+	v, found := strToIMAPFlags[value]
+	if !found {
+		return fmt.Errorf("%s: unknown flag", value)
+	}
+	map[string]string(*s)[value] = v
+	return nil
+}
+
 var (
 	zeroTime         = time.UnixMicro(0)
 	supportedFormats = []string{
@@ -55,6 +77,21 @@ var (
 		time.RFC1123,
 		time.RFC3339,
 		"2006-01-02",
+	}
+
+	strToIMAPFlags = map[string]string{
+		//S — Seen (read)
+		"S": imap.SeenFlag,
+		//R — Replied
+		"R": imap.AnsweredFlag,
+		// F — Flagged (important)
+		"F": imap.FlaggedFlag,
+		//T — Trashed
+		"T": imap.DeletedFlag,
+		// D — Draft
+		"D": imap.DraftFlag,
+		// P — Passed (forwarded)
+		"P": imap.RecentFlag,
 	}
 
 	appHomeDir string
@@ -66,9 +103,18 @@ var (
 	passwordArg       = flag.String("pass", "", "IMAP password")
 	userArg           = flag.String("user", "", "IMAP user")
 	maxMailFetchCount = flag.Int("m", 100, "Maximum number of messages to fetch")
-
-	since = dateFlag(zeroTime)
+	// search criteria flags
+	since   = dateFlag(zeroTime)
+	without = imapFlags{}
 )
+
+func supporedIMAPFlags() string {
+	var res []string
+	for k, v := range strToIMAPFlags {
+		res = append(res, fmt.Sprintf("- %s - %s", k, strings.TrimPrefix(v, "\\")))
+	}
+	return strings.Join(res, "\n")
+}
 
 type letter struct {
 	Date    string `json:"date"`
@@ -96,6 +142,10 @@ func init() {
 	sinceHelp := "fetch messages later than this date. Supported formats:\n" +
 		"- " + strings.Join(supportedFormats, "\n- ")
 	flag.Var(&since, "since", sinceHelp)
+	without["S"] = strToIMAPFlags["S"]
+	flag.Var(&without, "without",
+		"fetch messages without specified flags; supports multiple args; available flags:\n"+
+			supporedIMAPFlags())
 
 	must(initPaths())
 }
@@ -199,7 +249,7 @@ func fetchMails(c *client.Client, name string, ids []uint32) ([]*imap.Message, e
 	return messages, nil
 }
 
-func fetch(since time.Time) ([]*letter, error) {
+func fetch(without map[string]string, since time.Time) ([]*letter, error) {
 	passwd, err := readPassword()
 	if err != nil {
 		return nil, err
@@ -210,7 +260,9 @@ func fetch(since time.Time) ([]*letter, error) {
 	}
 	defer c.Logout()
 	q := imap.NewSearchCriteria()
-	q.WithoutFlags = []string{imap.SeenFlag}
+	for _, v := range without {
+		q.WithoutFlags = append(q.WithoutFlags, v)
+	}
 	if since != zeroTime {
 		q.Since = since
 	}
@@ -218,7 +270,8 @@ func fetch(since time.Time) ([]*letter, error) {
 	if err != nil {
 		return nil, err
 	}
-	messages, err := fetchMails(c, fmt.Sprintf("%s@%s/%s", *userArg, *addrArg, *mboxArg), ids)
+	name := fmt.Sprintf("%s@%s/%s", *userArg, *addrArg, *mboxArg)
+	messages, err := fetchMails(c, name, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +285,7 @@ func fetch(since time.Time) ([]*letter, error) {
 func main() {
 	flag.Parse()
 
-	letters, err := fetch(time.Time(since))
+	letters, err := fetch(without, time.Time(since))
 	dieIf(err)
 
 	enc := json.NewEncoder(os.Stdout)
