@@ -23,7 +23,20 @@ const (
 	url = "https://api.openai.com/v1/chat/completions"
 )
 
+type stringFlags []string
+
+func (s *stringFlags) String() string {
+	return fmt.Sprint(*s)
+}
+
+func (s *stringFlags) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 var (
+	attachments stringFlags
+
 	instructionText = flag.String("i", "", "instruction to LLM in text form")
 	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
@@ -133,12 +146,25 @@ func handleError(req *http.Request, resp *http.Response) (string, error) {
 	return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, url)
 }
 
-func complete(key string, instructions string, prompt string) (string, error) {
+func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*Message, error) {
 	messages := []*Message{}
 	if instructions != "" {
 		messages = append(messages, NewMessage(System, instructions))
 	}
+	for _, path := range attachPaths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		name := filepath.Base(path)
+		content := fmt.Sprintf("file: %s\n%s", name, string(b))
+		messages = append(messages, NewMessage(User, content))
+	}
 	messages = append(messages, NewMessage(User, prompt))
+	return messages, nil
+}
+
+func complete(key string, messages []*Message) (string, error) {
 	payload := map[string]any{
 		"stream":   false,
 		"model":    *model,
@@ -160,33 +186,44 @@ func complete(key string, instructions string, prompt string) (string, error) {
 	return parse(resp)
 }
 
+func prepare() (string, []*Message, error) {
+	prompt := readPrompt(flag.Args())
+	if prompt == "" {
+		return "", nil, errors.New("empty prompt")
+	}
+	key, err := apiKey()
+	if err != nil {
+		return "", nil, err
+	}
+	instructions, err := readInstructions()
+	if err != nil {
+		return "", nil, err
+	}
+	messages, err := mkMessages(instructions, prompt, attachments...)
+	if err != nil {
+		return "", nil, err
+	}
+	return key, messages, nil
+}
+
 func init() {
 	log.SetFlags(0)
+
+	flag.Var(&attachments, "a", "attach a file to prompt, supports multiple flags")
+	flag.Parse()
 }
 
 func main() {
-	flag.Parse()
-
-	prompt := readPrompt(flag.Args())
-	if prompt == "" {
-		dieIf(errors.New("empty prompt"))
-	}
-
-	key, err := apiKey()
+	key, messages, err := prepare()
 	dieIf(err)
 
-	instructions, err := readInstructions()
-	dieIf(err)
-
-	resp, err := complete(key, instructions, prompt)
+	resp, err := complete(key, messages)
 	dieIf(err)
 
 	fmt.Println(resp)
 }
 
-func must(err error) {
-	dieIf(err)
-}
+func must(err error) { dieIf(err) }
 
 func dieIf(err error) {
 	if err != nil {
