@@ -105,6 +105,7 @@ var (
 	maxMailFetchCount = flag.Int("m", 100, "Maximum number of messages to fetch")
 	// search criteria flags
 	since   = dateFlag(zeroTime)
+	with    = imapFlags{}
 	without = imapFlags{}
 )
 
@@ -144,7 +145,10 @@ func init() {
 	flag.Var(&since, "since", sinceHelp)
 	without["S"] = strToIMAPFlags["S"]
 	flag.Var(&without, "without",
-		"fetch messages without specified flags; supports multiple args; available flags:\n"+
+		"fetch messages _without_ specified flags; supports multiple args; available flags:\n"+
+			supporedIMAPFlags())
+	flag.Var(&with, "with",
+		"fetch messages _with_ specified flags; supports multiple args; available flags:\n"+
 			supporedIMAPFlags())
 
 	must(initPaths())
@@ -249,7 +253,7 @@ func fetchMails(c *client.Client, name string, ids []uint32) ([]*imap.Message, e
 	return messages, nil
 }
 
-func fetch(without map[string]string, since time.Time) ([]*letter, error) {
+func fetch(with map[string]string, without map[string]string, since time.Time) ([]*letter, error) {
 	passwd, err := readPassword()
 	if err != nil {
 		return nil, err
@@ -262,6 +266,9 @@ func fetch(without map[string]string, since time.Time) ([]*letter, error) {
 	q := imap.NewSearchCriteria()
 	for _, v := range without {
 		q.WithoutFlags = append(q.WithoutFlags, v)
+	}
+	for _, v := range with {
+		q.WithFlags = append(q.WithFlags, v)
 	}
 	if since != zeroTime {
 		q.Since = since
@@ -285,7 +292,7 @@ func fetch(without map[string]string, since time.Time) ([]*letter, error) {
 func main() {
 	flag.Parse()
 
-	letters, err := fetch(without, time.Time(since))
+	letters, err := fetch(with, without, time.Time(since))
 	dieIf(err)
 
 	enc := json.NewEncoder(os.Stdout)
