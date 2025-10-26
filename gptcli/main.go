@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultKeyFile = ".openapi.key"
-	defaultModel   = "gpt-4.1-mini"
+	defaultModel   = "gpt-5-nano"
 
 	// /usr/include/sysexits.h:101: EX_UNAVAILABLE - service unavailable
 	exitUnavailable = 69
