@@ -45,6 +45,7 @@ var (
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
 	url             = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
+	verbose         = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
 
 func homePath() string {
@@ -229,6 +230,15 @@ func prepare() (string, []*Message, error) {
 	return key, messages, nil
 }
 
+func timeIt(fn func(), msg string) {
+	started := time.Now()
+	fn()
+	elapsed := time.Since(started)
+	if *verbose {
+		fmt.Fprintf(os.Stderr, "%s took: %s\n", msg, elapsed)
+	}
+}
+
 func init() {
 	log.SetFlags(0)
 
@@ -240,7 +250,10 @@ func main() {
 	key, messages, err := prepare()
 	dieIf(err)
 
-	resp, err := complete(key, messages)
+	var resp string
+	timeIt(func() {
+		resp, err = complete(key, messages)
+	}, "complete")
 	dieIf(err)
 
 	fmt.Println(resp)
