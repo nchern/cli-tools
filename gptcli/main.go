@@ -125,7 +125,7 @@ func newRequest(key string, payload any) (*http.Request, error) {
 	return req, nil
 }
 
-func parse(resp *http.Response) (string, error) {
+func parse(resp *http.Response, w io.Writer) error {
 	var respData struct {
 		// OpenAI response
 		Choices []struct {
@@ -135,27 +135,29 @@ func parse(resp *http.Response) (string, error) {
 		Message *Message `json:"message"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
-		return "", err
+		return err
 	}
 	// handle Ollama response
 	if respData.Message != nil {
-		return respData.Message.Content, nil
+		_, err := io.WriteString(w, respData.Message.Content)
+		return err
 	}
 	// handle OpenAI response
 	for _, choice := range respData.Choices {
-		return choice.Message.Content, nil
+		_, err := io.WriteString(w, choice.Message.Content)
+		return err
 	}
-	return "", nil
+	return nil
 }
 
-func handleError(req *http.Request, resp *http.Response) (string, error) {
+func handleError(req *http.Request, resp *http.Response) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 	} else {
 		fmt.Fprintln(os.Stderr, string(body))
 	}
-	return "", fmt.Errorf("%s %s %s", resp.Status, req.Method, *url)
+	return fmt.Errorf("%s %s %s", resp.Status, req.Method, *url)
 }
 
 func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*Message, error) {
@@ -176,7 +178,7 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*M
 	return messages, nil
 }
 
-func complete(key string, messages []*Message) (string, error) {
+func complete(key string, messages []*Message, w io.Writer) error {
 	payload := map[string]any{
 		"stream":   false,
 		"model":    *model,
@@ -184,18 +186,18 @@ func complete(key string, messages []*Message) (string, error) {
 	}
 	req, err := newRequest(key, payload)
 	if err != nil {
-		return "", err
+		return err
 	}
 	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return handleError(req, resp)
 	}
-	return parse(resp)
+	return parse(resp, w)
 }
 
 func errorToExitCode(err error) int {
@@ -250,13 +252,10 @@ func main() {
 	key, messages, err := prepare()
 	dieIf(err)
 
-	var resp string
 	timeIt(func() {
-		resp, err = complete(key, messages)
+		err = complete(key, messages, os.Stdout)
 	}, "complete")
 	dieIf(err)
-
-	fmt.Println(resp)
 }
 
 func must(err error) { dieIf(err) }
