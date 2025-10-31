@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ var (
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
+	stream          = flag.Bool("s", false, "if set, use streaming API")
 	url             = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
 	verbose         = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
@@ -125,7 +127,86 @@ func newRequest(key string, payload any) (*http.Request, error) {
 	return req, nil
 }
 
+func parseOpenAIStream(resp *http.Response, w io.Writer) error {
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			// OpenAI sends "data: ..." lines; ignore keepalives
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if strings.TrimSpace(data) == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return err
+		}
+		if len(chunk.Choices) > 0 {
+			if _, err := io.WriteString(w, chunk.Choices[0].Delta.Content); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func parseOllamaStream(resp *http.Response, w io.Writer) error {
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var msg struct {
+			Done    bool    `json:"done"`
+			Model   string  `json:"model"`
+			Message Message `json:"message"`
+		}
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return err
+		}
+		if msg.Done {
+			break
+		}
+		if msg.Message.Content != "" {
+			if _, err := io.WriteString(w, msg.Message.Content); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func parse(resp *http.Response, w io.Writer) error {
+	if *stream {
+		if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+			// OpenAI response
+			return parseOpenAIStream(resp, w)
+		}
+		// Ollama response
+		return parseOllamaStream(resp, w)
+	}
 	var respData struct {
 		// OpenAI response
 		Choices []struct {
@@ -180,7 +261,7 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*M
 
 func complete(key string, messages []*Message, w io.Writer) error {
 	payload := map[string]any{
-		"stream":   false,
+		"stream":   *stream,
 		"model":    *model,
 		"messages": messages,
 	}
