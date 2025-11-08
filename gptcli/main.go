@@ -37,17 +37,28 @@ func (s *stringFlags) Set(value string) error {
 	return nil
 }
 
-var (
-	attachments stringFlags
+type promptSource string
 
+const (
+	auto      promptSource = "auto"
+	combine   promptSource = "combine"
+	argsOnly  promptSource = "args"
+	stdinOnly promptSource = "stdin"
+)
+
+var (
+	// CLI flags
+	attachments     stringFlags // -a flag - see in init()
 	instructionText = flag.String("i", "", "instruction to LLM in text form")
 	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
-	stream          = flag.Bool("s", false, "if set, use streaming API")
-	url             = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
-	verbose         = flag.Bool("v", false, "if set, verbose mode shows timings")
+	// stdin/args/combine/auto
+	promptSrc = flag.String("p", string(auto), "prompt source")
+	stream    = flag.Bool("s", false, "if set, use streaming API")
+	url       = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
+	verbose   = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
 
 func homePath() string {
@@ -78,12 +89,31 @@ func readInstructions() (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-func readPrompt(args []string) string {
-	if len(args) == 0 {
-		data, _ := io.ReadAll(os.Stdin)
-		return string(data)
+func readPrompt(src promptSource, args []string) (string, error) {
+	switch src {
+	case combine:
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		return string(b) + "\n\n" + strings.Join(args, " "), nil
+	case argsOnly:
+		return strings.Join(args, " "), nil
+	case stdinOnly:
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	case auto:
+		// auto by default
+		if len(args) == 0 {
+			data, _ := io.ReadAll(os.Stdin)
+			return string(data), nil
+		}
+		return strings.Join(args, " "), nil
 	}
-	return strings.Join(args, " ")
+	return "", fmt.Errorf("unknown source: %s", src)
 }
 
 // Role represents a role in LLM chat
@@ -294,7 +324,10 @@ func errorToExitCode(err error) int {
 }
 
 func prepare() (string, []*Message, error) {
-	prompt := readPrompt(flag.Args())
+	prompt, err := readPrompt(promptSource(*promptSrc), flag.Args())
+	if err != nil {
+		return "", nil, err
+	}
 	if prompt == "" {
 		return "", nil, errors.New("empty prompt")
 	}
@@ -318,7 +351,7 @@ func timeIt(fn func(), msg string) {
 	fn()
 	elapsed := time.Since(started)
 	if *verbose {
-		fmt.Fprintf(os.Stderr, "%s took: %s\n", msg, elapsed)
+		fmt.Fprintf(os.Stderr, "\n%s took: %s\n", msg, elapsed)
 	}
 }
 
