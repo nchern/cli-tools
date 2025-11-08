@@ -99,6 +99,14 @@ func homePath() string {
 }
 
 func apiKey() (string, error) {
+	fi, err := os.Stat(*keyPath)
+	if err != nil {
+		return "", err
+	}
+	if fi.Mode().Perm() != 0600 {
+		return "", fmt.Errorf("%s: must have permissions 600(-rw-------); actual: %s",
+			*keyPath, fi.Mode().Perm())
+	}
 	data, err := os.ReadFile(*keyPath)
 	if err != nil {
 		return "", err
