@@ -187,7 +187,9 @@ func main() {
 	key, messages, err := prepare()
 	dieIf(err)
 
-	ai := genai.NewClient(*url, key, *model, *stream, time.Duration(*timeout))
+	ai := genai.NewClient(*url, key, *model).
+		SetStreaming(*stream).
+		SetTimeout(time.Duration(*timeout))
 	timeIt(func() {
 		err = ai.Complete(messages, os.Stdout)
 	}, "complete")

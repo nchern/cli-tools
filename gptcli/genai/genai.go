@@ -153,14 +153,25 @@ type Client struct {
 }
 
 // NewClient creates a new Client instance with the given configuration.
-func NewClient(apiURL string, key string, model string, stream bool, timeout time.Duration) *Client {
+func NewClient(apiURL string, key string, model string) *Client {
 	return &Client{
 		apiURL:  apiURL,
 		key:     key,
 		model:   model,
-		stream:  stream,
-		timeout: timeout,
+		timeout: defaultTimeout,
 	}
+}
+
+// SetStreaming enables or disables streaming mode for completions
+func (c *Client) SetStreaming(enabled bool) *Client {
+	c.stream = enabled
+	return c
+}
+
+// SetTimeout sets a custom timeout on this client
+func (c *Client) SetTimeout(t time.Duration) *Client {
+	c.timeout = t
+	return c
 }
 
 // Complete calls GenAI to complete given messages and write results to a given
