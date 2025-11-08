@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,6 +36,37 @@ func (s *stringFlags) Set(value string) error {
 	return nil
 }
 
+type perfLogFlag string
+
+func (pf *perfLogFlag) String() string {
+	if pf == nil {
+		return ""
+	}
+	return string(*pf)
+}
+
+func (pf *perfLogFlag) Set(value string) error {
+	*pf = perfLogFlag(value)
+	return nil
+}
+
+func (pf *perfLogFlag) Write(cs *genai.CallStat) error {
+	if pf == nil || *pf == "" {
+		return nil
+	}
+	f, err := os.OpenFile(string(*pf), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b, err := json.Marshal(cs)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(f, string(b))
+	return err
+}
+
 type promptSource string
 
 const (
@@ -53,10 +85,11 @@ var (
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 30, "API timeout in seconds")
 	// stdin/args/combine/auto
-	promptSrc = flag.String("p", string(auto), "prompt source")
-	stream    = flag.Bool("s", false, "if set, use streaming API")
-	url       = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
-	verbose   = flag.Bool("v", false, "if set, verbose mode shows timings")
+	promptSrc      = flag.String("p", string(auto), "prompt source")
+	performanceLog perfLogFlag // -perflog flag - see in init()
+	stream         = flag.Bool("s", false, "if set, use streaming API")
+	url            = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
+	verbose        = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
 
 func homePath() string {
@@ -171,6 +204,7 @@ func init() {
 	log.SetFlags(0)
 
 	flag.Var(&attachments, "a", "attach a file to prompt, multiple attachments are supported")
+	flag.Var(&performanceLog, "perflog", "enables profiling: will write perf stats into a given log")
 	flag.Parse()
 }
 
@@ -186,6 +220,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\ncomplete took: %fs\n", cstat.DurationSec)
 	}
 	dieIf(err)
+	cstat.Timestamp = time.Now()
+	must(performanceLog.Write(cstat))
 }
 
 func must(err error) { dieIf(err) }

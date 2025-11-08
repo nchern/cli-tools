@@ -53,6 +53,8 @@ type CallStat struct {
 	OutCharsCount int `json:"out_chars_count"`
 
 	Payload map[string]any `json:"payload"`
+
+	Timestamp time.Time `json:"timestamp"`
 }
 
 func newRequest(apiURL string, key string, payload any) (*http.Request, error) {
@@ -199,7 +201,7 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 		"model":    c.model,
 		"messages": messages,
 	}
-	cs := &CallStat{}
+	cs := &CallStat{Payload: payload}
 	for _, m := range messages {
 		if m.Role != Assistant {
 			cs.InCharsCount += len(m.Content)
