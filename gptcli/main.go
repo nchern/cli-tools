@@ -167,15 +167,6 @@ func prepare() (string, []*genai.Message, error) {
 	return key, messages, nil
 }
 
-func timeIt(fn func(), msg string) {
-	started := time.Now()
-	fn()
-	elapsed := time.Since(started)
-	if *verbose {
-		fmt.Fprintf(os.Stderr, "\n%s took: %s\n", msg, elapsed)
-	}
-}
-
 func init() {
 	log.SetFlags(0)
 
@@ -189,10 +180,11 @@ func main() {
 
 	ai := genai.NewClient(*url, key, *model).
 		SetStreaming(*stream).
-		SetTimeout(time.Duration(*timeout))
-	timeIt(func() {
-		err = ai.Complete(messages, os.Stdout)
-	}, "complete")
+		SetTimeout(time.Duration(*timeout) * time.Second)
+	cstat, err := ai.Complete(messages, os.Stdout)
+	if *verbose {
+		fmt.Fprintf(os.Stderr, "\ncomplete took: %fs\n", cstat.DurationSec)
+	}
 	dieIf(err)
 }
 

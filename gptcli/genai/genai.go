@@ -44,6 +44,17 @@ func NewMessage(role Role, s string) *Message {
 	return &Message{Role: role, Content: s}
 }
 
+type CallStat struct {
+	Code int `json:"code"`
+
+	DurationSec float64 `json:"duration_sec"`
+
+	InCharsCount  int `json:"in_chars_count"`
+	OutCharsCount int `json:"out_chars_count"`
+
+	Payload map[string]any `json:"payload"`
+}
+
 func newRequest(apiURL string, key string, payload any) (*http.Request, error) {
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
@@ -58,7 +69,7 @@ func newRequest(apiURL string, key string, payload any) (*http.Request, error) {
 	return req, nil
 }
 
-func parseOpenAIStream(resp *http.Response, w io.Writer) error {
+func parseOpenAIStream(resp *http.Response, w io.Writer, cs *CallStat) error {
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, err := reader.ReadString('\n')
@@ -87,7 +98,7 @@ func parseOpenAIStream(resp *http.Response, w io.Writer) error {
 			return err
 		}
 		if len(chunk.Choices) > 0 {
-			if _, err := io.WriteString(w, chunk.Choices[0].Delta.Content); err != nil {
+			if err := writeStringTo(w, chunk.Choices[0].Delta.Content, cs); err != nil {
 				return err
 			}
 		}
@@ -95,7 +106,7 @@ func parseOpenAIStream(resp *http.Response, w io.Writer) error {
 	return nil
 }
 
-func parseOllamaStream(resp *http.Response, w io.Writer) error {
+func parseOllamaStream(resp *http.Response, w io.Writer, cs *CallStat) error {
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -121,7 +132,7 @@ func parseOllamaStream(resp *http.Response, w io.Writer) error {
 			break
 		}
 		if msg.Message.Content != "" {
-			if _, err := io.WriteString(w, msg.Message.Content); err != nil {
+			if err := writeStringTo(w, msg.Message.Content, cs); err != nil {
 				return err
 			}
 		}
@@ -137,6 +148,12 @@ func handleError(req *http.Request, resp *http.Response) error {
 		fmt.Fprintln(os.Stderr, string(body))
 	}
 	return fmt.Errorf("%s %s %s", resp.Status, req.Method, req.URL)
+}
+
+func writeStringTo(w io.Writer, s string, cs *CallStat) error {
+	cs.OutCharsCount += len(s)
+	_, err := io.WriteString(w, s)
+	return err
 }
 
 // Client represents a Gen AI API client
@@ -176,36 +193,47 @@ func (c *Client) SetTimeout(t time.Duration) *Client {
 
 // Complete calls GenAI to complete given messages and write results to a given
 // writer
-func (c *Client) Complete(messages []*Message, w io.Writer) error {
+func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 	payload := map[string]any{
 		"stream":   c.stream,
 		"model":    c.model,
 		"messages": messages,
 	}
+	cs := &CallStat{}
+	for _, m := range messages {
+		if m.Role != Assistant {
+			cs.InCharsCount += len(m.Content)
+		}
+	}
 	req, err := newRequest(c.apiURL, c.key, payload)
 	if err != nil {
-		return err
+		return cs, err
 	}
-	httpClient := &http.Client{Timeout: c.timeout * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return handleError(req, resp)
-	}
-	return c.parse(resp, w)
+	httpClient := &http.Client{Timeout: c.timeout}
+	d, err := timeIt(func() error {
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		cs.Code = resp.StatusCode
+		if resp.StatusCode != http.StatusOK {
+			return handleError(req, resp)
+		}
+		return c.parse(resp, w, cs)
+	})
+	cs.DurationSec = float64(d) / float64(time.Second)
+	return cs, err
 }
 
-func (c *Client) parse(resp *http.Response, w io.Writer) error {
+func (c *Client) parse(resp *http.Response, w io.Writer, cs *CallStat) error {
 	if c.stream {
 		if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 			// OpenAI response
-			return parseOpenAIStream(resp, w)
+			return parseOpenAIStream(resp, w, cs)
 		}
 		// Ollama response
-		return parseOllamaStream(resp, w)
+		return parseOllamaStream(resp, w, cs)
 	}
 	var respData struct {
 		// OpenAI response
@@ -220,13 +248,17 @@ func (c *Client) parse(resp *http.Response, w io.Writer) error {
 	}
 	// handle Ollama response
 	if respData.Message != nil {
-		_, err := io.WriteString(w, respData.Message.Content)
-		return err
+		return writeStringTo(w, respData.Message.Content, cs)
 	}
 	// handle OpenAI response
 	for _, choice := range respData.Choices {
-		_, err := io.WriteString(w, choice.Message.Content)
-		return err
+		return writeStringTo(w, choice.Message.Content, cs)
 	}
 	return nil
+}
+
+func timeIt(fn func() error) (time.Duration, error) {
+	started := time.Now()
+	err := fn()
+	return time.Since(started), err
 }
