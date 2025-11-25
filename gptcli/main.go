@@ -210,8 +210,13 @@ func prepare() (string, []*genai.Message, error) {
 
 func init() {
 	log.SetFlags(0)
+	defaultUsage := flag.Usage
+	flag.Usage = func() {
+		fmt.Printf("%s - CLI interface to LLM APIs.\n\n", os.Args[0])
+		defaultUsage()
+	}
 
-	flag.Var(&attachments, "a", "attach a file to prompt, multiple attachments are supported")
+	flag.Var(&attachments, "a", "attach a file to prompt; multiple attachments are supported")
 	flag.Var(&performanceLog, "perflog", "enables profiling: will write perf stats into a given log")
 	flag.Parse()
 }
