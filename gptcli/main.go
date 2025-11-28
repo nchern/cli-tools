@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultKeyFile = ".openapi.key"
+	defaultKeyFile = ".gptcli.key"
 	defaultModel   = "gpt-5-nano"
 
 	// /usr/include/sysexits.h:101: EX_UNAVAILABLE - service unavailable
