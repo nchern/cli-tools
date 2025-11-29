@@ -87,6 +87,7 @@ var (
 	// stdin/args/combine/auto
 	promptSrc      = flag.String("p", string(auto), "prompt source")
 	performanceLog perfLogFlag // -perflog flag - see in init()
+	raw            = flag.Bool("r", false, "if set, expects raw messages on stdin in JSON format")
 	stream         = flag.Bool("s", false, "if set, use streaming API")
 	url            = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
 	verbose        = flag.Bool("v", false, "if set, verbose mode shows timings")
@@ -186,16 +187,23 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*g
 }
 
 func prepare() (string, []*genai.Message, error) {
+	key, err := apiKey()
+	if err != nil {
+		return "", nil, err
+	}
+	if *raw {
+		var res []*genai.Message
+		if err := json.NewDecoder(os.Stdin).Decode(&res); err != nil {
+			return "", nil, err
+		}
+		return key, res, nil
+	}
 	prompt, err := readPrompt(promptSource(*promptSrc), flag.Args())
 	if err != nil {
 		return "", nil, err
 	}
 	if prompt == "" {
 		return "", nil, errors.New("empty prompt")
-	}
-	key, err := apiKey()
-	if err != nil {
-		return "", nil, err
 	}
 	instructions, err := readInstructions()
 	if err != nil {
