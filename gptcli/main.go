@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -87,6 +88,7 @@ var (
 	// stdin/args/combine/auto
 	promptSrc      = flag.String("p", string(auto), "prompt source")
 	performanceLog perfLogFlag // -perflog flag - see in init()
+	raw            = flag.Bool("r", false, "if set, expects raw messages on stdin in JSON format")
 	stream         = flag.Bool("s", false, "if set, use streaming API")
 	url            = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
 	verbose        = flag.Bool("v", false, "if set, verbose mode shows timings")
@@ -185,29 +187,6 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*g
 	return messages, nil
 }
 
-func prepare() (string, []*genai.Message, error) {
-	prompt, err := readPrompt(promptSource(*promptSrc), flag.Args())
-	if err != nil {
-		return "", nil, err
-	}
-	if prompt == "" {
-		return "", nil, errors.New("empty prompt")
-	}
-	key, err := apiKey()
-	if err != nil {
-		return "", nil, err
-	}
-	instructions, err := readInstructions()
-	if err != nil {
-		return "", nil, err
-	}
-	messages, err := mkMessages(instructions, prompt, attachments...)
-	if err != nil {
-		return "", nil, err
-	}
-	return key, messages, nil
-}
-
 func init() {
 	log.SetFlags(0)
 	defaultUsage := flag.Usage
@@ -221,13 +200,61 @@ func init() {
 	flag.Parse()
 }
 
-func main() {
-	key, messages, err := prepare()
-	dieIf(err)
+type aiClient interface {
+	Complete(messages []*genai.Message, w io.Writer) (*genai.CallStat, error)
+}
 
-	ai := genai.NewClient(*url, key, *model).
-		SetStreaming(*stream).
+type rawModeClientDecorator struct {
+	client aiClient
+}
+
+func (c *rawModeClientDecorator) Complete(messages []*genai.Message, w io.Writer) (*genai.CallStat, error) {
+	var buf bytes.Buffer
+	cs, err := c.client.Complete(messages, &buf)
+	if err != nil {
+		return cs, err
+	}
+	messages = append(messages, &genai.Message{Role: genai.Assistant, Content: buf.String()})
+	return cs, json.NewEncoder(w).Encode(messages)
+}
+
+func prepare() (aiClient, []*genai.Message, error) {
+	key, err := apiKey()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var res aiClient = genai.NewClient(*url, key, *model).SetStreaming(*stream).
 		SetTimeout(time.Duration(*timeout) * time.Second)
+	if *raw {
+		res = &rawModeClientDecorator{res}
+		var msgs []*genai.Message
+		if err := json.NewDecoder(os.Stdin).Decode(&msgs); err != nil {
+			return nil, nil, err
+		}
+		return res, msgs, nil
+	}
+	prompt, err := readPrompt(promptSource(*promptSrc), flag.Args())
+	if err != nil {
+		return nil, nil, err
+	}
+	if prompt == "" {
+		return nil, nil, errors.New("empty prompt")
+	}
+	instructions, err := readInstructions()
+	if err != nil {
+		return nil, nil, err
+	}
+	messages, err := mkMessages(instructions, prompt, attachments...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res, messages, nil
+}
+
+func main() {
+	ai, messages, err := prepare()
+	dieIf(err)
 	cstat, err := ai.Complete(messages, os.Stdout)
 	if *verbose {
 		fmt.Fprintf(os.Stderr, "\ncomplete took: %fs\n", cstat.DurationSec)
