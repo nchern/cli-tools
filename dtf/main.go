@@ -42,6 +42,8 @@ func parseRelativeTime(val string) (time.Time, error) {
 		return now.Add(time.Duration(n) * time.Hour), nil
 	case "day":
 		return now.AddDate(0, 0, n), nil
+	case "week":
+		return now.AddDate(0, 0, 7*n), nil
 	default:
 		return time.Time{}, fmt.Errorf("%s: unknown or unsupported units", unit)
 	}
