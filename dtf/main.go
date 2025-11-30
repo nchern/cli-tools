@@ -41,7 +41,7 @@ func parseRelativeTime(val string) (time.Time, error) {
 	case "hour":
 		return now.Add(time.Duration(n) * time.Hour), nil
 	case "day":
-		return now.AddDate(0, 0, -n), nil
+		return now.AddDate(0, 0, n), nil
 	default:
 		return time.Time{}, fmt.Errorf("%s: unknown or unsupported units", unit)
 	}
@@ -55,6 +55,9 @@ func parseDate(val, dateFmt string) (time.Time, error) {
 }
 
 func parseDateArg(val, dateFmt string) (time.Time, error) {
+	if val == "" {
+		return time.Time{}, nil
+	}
 	if strings.HasSuffix(val, " ago") || strings.HasPrefix(val, "-") {
 		return parseRelativeTime(val)
 	}
