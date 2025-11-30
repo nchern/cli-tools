@@ -72,6 +72,20 @@ type Args struct {
 	Verbose  bool
 }
 
+func usage() {
+	fmt.Printf("%s - filters data on stdin treating fields within lines as dates.\n",
+		os.Args[0])
+	fmt.Println("Currently supports whitespaces as field separator.")
+	fmt.Println()
+	fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+	flag.PrintDefaults()
+	fmt.Println()
+	fmt.Println("TIME FORMAT SHORTCUTS")
+	for k, v := range formats {
+		fmt.Printf("\t* %s (%v)\n", k, v)
+	}
+}
+
 func parseArgs() (*Args, error) {
 	args := &Args{}
 
@@ -113,11 +127,11 @@ func shouldSkip(fields []string, args *Args) (bool, error) {
 	return dt.Before(args.Since) || dt.After(args.Until), nil
 }
 
-func processLine(line string, args *Args) error {
+func filterLine(line string, args *Args) error {
 	fields := strings.Fields(line)
 	skip, err := shouldSkip(fields, args)
 	if err != nil {
-		return fmt.Errorf("warn: problem: %v, skipping line: %s", err, line)
+		return fmt.Errorf("problem: %v, skipping line: %s", err, line)
 	}
 	if !skip {
 		fmt.Println(line)
@@ -134,8 +148,8 @@ func run() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if err := processLine(line, args); err != nil && args.Verbose {
-			fmt.Fprintf(os.Stderr, "%d: %s\n", i, err)
+		if err := filterLine(line, args); err != nil && args.Verbose {
+			fmt.Fprintf(os.Stderr, "warn: line #%d: %s\n", i, err)
 		}
 		i++
 	}
@@ -143,19 +157,7 @@ func run() error {
 }
 
 func main() {
-	flag.Usage = func() {
-		fmt.Printf("%s - filters data on stdin treating fields within lines as dates.\n",
-			os.Args[0])
-		fmt.Println("Currently supports whitespaces as field separator.")
-		fmt.Println()
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
-		flag.PrintDefaults()
-		fmt.Println()
-		fmt.Println("TIME FORMAT SHORTCUTS")
-		for k, v := range formats {
-			fmt.Printf("\t* %s (%v)\n", k, v)
-		}
-	}
+	flag.Usage = usage
 
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
