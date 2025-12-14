@@ -84,7 +84,7 @@ var (
 	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
 	model           = flag.String("m", defaultModel, "model name")
-	timeout         = flag.Int("t", 30, "API timeout in seconds")
+	timeout         = flag.Int("t", 600, "API timeout in seconds")
 	// stdin/args/combine/auto
 	promptSrc      = flag.String("p", string(auto), "prompt source")
 	performanceLog perfLogFlag // -perflog flag - see in init()
