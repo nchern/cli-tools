@@ -203,9 +203,7 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 	}
 	cs := &CallStat{Payload: payload}
 	for _, m := range messages {
-		if m.Role != Assistant {
-			cs.InCharsCount += len(m.Content)
-		}
+		cs.InCharsCount += len(m.Content)
 	}
 	req, err := newRequest(c.apiURL, c.key, payload)
 	if err != nil {
