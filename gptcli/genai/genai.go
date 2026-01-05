@@ -57,22 +57,8 @@ type CallStat struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-func newRequest(apiURL string, key string, payload any) (*http.Request, error) {
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("POST", apiURL, &buf)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Content-Type", "application/json")
-	return req, nil
-}
-
-func parseOpenAIStream(resp *http.Response, w io.Writer, cs *CallStat) error {
-	reader := bufio.NewReader(resp.Body)
+func parseOpenAIStream(resp io.Reader, w io.Writer, cs *CallStat) error {
+	reader := bufio.NewReader(resp)
 	for {
 		line, err := reader.ReadString('\n')
 		if err == io.EOF {
@@ -108,8 +94,8 @@ func parseOpenAIStream(resp *http.Response, w io.Writer, cs *CallStat) error {
 	return nil
 }
 
-func parseOllamaStream(resp *http.Response, w io.Writer, cs *CallStat) error {
-	reader := bufio.NewReader(resp.Body)
+func parseOllamaStream(resp io.Reader, w io.Writer, cs *CallStat) error {
+	reader := bufio.NewReader(resp)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err == io.EOF {
@@ -160,6 +146,8 @@ func writeStringTo(w io.Writer, s string, cs *CallStat) error {
 
 // Client represents a Gen AI API client
 type Client struct {
+	tracer io.Writer
+
 	apiURL string
 
 	key string
@@ -181,6 +169,23 @@ func NewClient(apiURL string, key string, model string) *Client {
 	}
 }
 
+func (c *Client) newRequest(payload any) (*http.Request, error) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+		return nil, err
+	}
+	b := buf.Bytes()
+	req, err := http.NewRequest("POST", c.apiURL, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	req.Header.Set("Content-Type", "application/json")
+	fmt.Fprintf(c.tracer, "%s %s\n", req.Method, req.URL)
+	fmt.Fprintln(c.tracer, string(b))
+	return req, nil
+}
+
 // SetStreaming enables or disables streaming mode for completions
 func (c *Client) SetStreaming(enabled bool) *Client {
 	c.stream = enabled
@@ -190,6 +195,12 @@ func (c *Client) SetStreaming(enabled bool) *Client {
 // SetTimeout sets a custom timeout on this client
 func (c *Client) SetTimeout(t time.Duration) *Client {
 	c.timeout = t
+	return c
+}
+
+// SetTracer sets a writer to write trace information
+func (c *Client) SetTracer(w io.Writer) *Client {
+	c.tracer = w
 	return c
 }
 
@@ -205,7 +216,7 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 	for _, m := range messages {
 		cs.InCharsCount += len(m.Content)
 	}
-	req, err := newRequest(c.apiURL, c.key, payload)
+	req, err := c.newRequest(payload)
 	if err != nil {
 		return cs, err
 	}
@@ -213,7 +224,7 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 	d, err := timeIt(func() error {
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return err
+			return fmt.Errorf("http.Client.Do: %w", err)
 		}
 		defer resp.Body.Close()
 		cs.Code = resp.StatusCode
@@ -227,13 +238,14 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 }
 
 func (c *Client) parse(resp *http.Response, w io.Writer, cs *CallStat) error {
+	body := io.TeeReader(resp.Body, c.tracer)
 	if c.stream {
 		if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 			// OpenAI response
-			return parseOpenAIStream(resp, w, cs)
+			return parseOpenAIStream(body, w, cs)
 		}
 		// Ollama response
-		return parseOllamaStream(resp, w, cs)
+		return parseOllamaStream(body, w, cs)
 	}
 	var respData struct {
 		// OpenAI response
@@ -243,7 +255,7 @@ func (c *Client) parse(resp *http.Response, w io.Writer, cs *CallStat) error {
 		// Ollama response
 		Message *Message `json:"message"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+	if err := json.NewDecoder(body).Decode(&respData); err != nil {
 		return err
 	}
 	// handle Ollama response

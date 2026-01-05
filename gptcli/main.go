@@ -218,6 +218,13 @@ func (c *rawModeClientDecorator) Complete(messages []*genai.Message, w io.Writer
 	return cs, json.NewEncoder(w).Encode(messages)
 }
 
+func debugWriter() io.Writer {
+	if *verbose {
+		return os.Stderr
+	}
+	return io.Discard
+}
+
 func prepare() (aiClient, []*genai.Message, error) {
 	key, err := apiKey()
 	if err != nil {
@@ -225,7 +232,7 @@ func prepare() (aiClient, []*genai.Message, error) {
 	}
 
 	var res aiClient = genai.NewClient(*url, key, *model).SetStreaming(*stream).
-		SetTimeout(time.Duration(*timeout) * time.Second)
+		SetTimeout(time.Duration(*timeout) * time.Second).SetTracer(debugWriter())
 	if *raw {
 		res = &rawModeClientDecorator{res}
 		var msgs []*genai.Message
@@ -256,9 +263,7 @@ func main() {
 	ai, messages, err := prepare()
 	dieIf(err)
 	cstat, err := ai.Complete(messages, os.Stdout)
-	if *verbose {
-		fmt.Fprintf(os.Stderr, "\ncomplete took: %fs\n", cstat.DurationSec)
-	}
+	fmt.Fprintf(debugWriter(), "\n\n---\ncomplete took: %fs\n", cstat.DurationSec)
 	dieIf(err)
 	cstat.Timestamp = time.Now()
 	must(performanceLog.Write(cstat))
