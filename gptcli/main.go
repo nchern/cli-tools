@@ -154,7 +154,8 @@ func readPrompt(src promptSource, args []string) (string, error) {
 		}
 		return strings.Join(args, " "), nil
 	}
-	return "", fmt.Errorf("unknown source: %s", src)
+	return "", fmt.Errorf("unknown source: %s. Must be one of: {%s, %s, %s, %s}",
+		src, argsOnly, auto, combine, stdinOnly)
 }
 
 func errorToExitCode(err error) int {
