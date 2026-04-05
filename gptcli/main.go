@@ -86,7 +86,8 @@ var (
 	model           = flag.String("m", defaultModel, "model name")
 	timeout         = flag.Int("t", 600, "API timeout in seconds")
 	// stdin/args/combine/auto
-	promptSrc      = flag.String("p", string(auto), "prompt source")
+	promptSrc = flag.String("p", string(auto), "prompt source, accepts: "+
+		strings.Join([]string{string(auto), string(combine), string(argsOnly), string(stdinOnly)}, ", "))
 	performanceLog perfLogFlag // -perflog flag - see in init()
 	raw            = flag.Bool("r", false, "if set, expects raw messages on stdin in JSON format")
 	stream         = flag.Bool("s", false, "if set, use streaming API")
