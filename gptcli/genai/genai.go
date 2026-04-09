@@ -166,6 +166,7 @@ func NewClient(apiURL string, key string, model string) *Client {
 		key:     key,
 		model:   model,
 		timeout: defaultTimeout,
+		tracer:  io.Discard,
 	}
 }
 
