@@ -53,8 +53,6 @@ type CallStat struct {
 	OutCharsCount int `json:"out_chars_count"`
 
 	Payload map[string]any `json:"payload"`
-
-	Timestamp time.Time `json:"timestamp"`
 }
 
 func parseOpenAIStream(resp io.Reader, w io.Writer, cs *CallStat) error {

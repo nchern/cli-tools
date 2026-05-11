@@ -51,7 +51,7 @@ func (pf *perfLogFlag) Set(value string) error {
 	return nil
 }
 
-func (pf *perfLogFlag) Write(cs *genai.CallStat) error {
+func (pf *perfLogFlag) Write(cs *state) error {
 	if pf == nil || *pf == "" {
 		return nil
 	}
@@ -261,14 +261,28 @@ func prepare() (aiClient, []*genai.Message, error) {
 	return res, messages, nil
 }
 
+type state struct {
+	*genai.CallStat
+
+	Args []string `json:"args"`
+
+	Timestamp time.Time `json:"timestamp"`
+}
+
 func main() {
 	ai, messages, err := prepare()
 	dieIf(err)
 	cstat, err := ai.Complete(messages, os.Stdout)
 	fmt.Fprintf(debugWriter(), "\n\n---\ncomplete took: %fs\n", cstat.DurationSec)
 	dieIf(err)
-	cstat.Timestamp = time.Now()
-	must(performanceLog.Write(cstat))
+
+	st := &state{
+		CallStat:  cstat,
+		Timestamp: time.Now(),
+		Args:      os.Args,
+	}
+
+	must(performanceLog.Write(st))
 }
 
 func must(err error) { dieIf(err) }
