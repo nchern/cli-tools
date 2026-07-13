@@ -83,7 +83,7 @@ var (
 	instructionText = flag.String("i", "", "instruction to LLM in text form")
 	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
-	model           = flag.String("m", defaultModel, "model name")
+	model           = flag.String("m", getModel(defaultModel), "model name")
 	timeout         = flag.Int("t", 600, "API timeout in seconds")
 	// stdin/args/combine/auto
 	promptSrc = flag.String("p", string(auto), "prompt source, accepts: "+
@@ -94,6 +94,13 @@ var (
 	url            = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
 	verbose        = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
+
+func getModel(defVal string) string {
+	if v := strings.TrimSpace(os.Getenv("GPTCLI_MODEL")); v != "" {
+		return v
+	}
+	return defVal
+}
 
 func homePath() string {
 	u, err := user.Current()
