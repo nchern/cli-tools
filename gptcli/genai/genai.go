@@ -180,8 +180,8 @@ func (c *Client) newRequest(payload any) (*http.Request, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	req.Header.Set("Content-Type", "application/json")
-	fmt.Fprintf(c.tracer, "%s %s\n", req.Method, req.URL)
-	fmt.Fprintln(c.tracer, string(b))
+	fmt.Fprintf(c.tracer, "> %s %s\n", req.Method, req.URL)
+	fmt.Fprintln(c.tracer, ">", string(b))
 	return req, nil
 }
 
@@ -237,16 +237,18 @@ func (c *Client) Complete(messages []*Message, w io.Writer) (*CallStat, error) {
 }
 
 func (c *Client) parse(resp *http.Response, w io.Writer, cs *CallStat) error {
-	body := io.TeeReader(resp.Body, c.tracer)
+	fmt.Fprintln(c.tracer) // to visually split response from request
+	fmt.Fprint(c.tracer, "> ")
+	r := io.TeeReader(resp.Body, c.tracer)
 	if c.stream {
 		if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 			// OpenAI response
-			return parseOpenAIStream(body, w, cs)
+			return parseOpenAIStream(r, w, cs)
 		}
 		// Ollama response
-		return parseOllamaStream(body, w, cs)
+		return parseOllamaStream(r, w, cs)
 	}
-	var respData struct {
+	var response struct {
 		// OpenAI response
 		Choices []struct {
 			Message Message `json:"message"`
@@ -254,15 +256,15 @@ func (c *Client) parse(resp *http.Response, w io.Writer, cs *CallStat) error {
 		// Ollama response
 		Message *Message `json:"message"`
 	}
-	if err := json.NewDecoder(body).Decode(&respData); err != nil {
+	if err := json.NewDecoder(r).Decode(&response); err != nil {
 		return err
 	}
 	// handle Ollama response
-	if respData.Message != nil {
-		return writeStringTo(w, respData.Message.Content, cs)
+	if response.Message != nil {
+		return writeStringTo(w, response.Message.Content, cs)
 	}
 	// handle OpenAI response
-	for _, choice := range respData.Choices {
+	for _, choice := range response.Choices {
 		return writeStringTo(w, choice.Message.Content, cs)
 	}
 	return nil
