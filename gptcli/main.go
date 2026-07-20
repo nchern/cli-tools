@@ -78,20 +78,26 @@ const (
 )
 
 var (
+	providerToURL = map[string]string{
+		"ollama": "http://localhost:11434/v1/chat/completions",
+		"openai": "https://api.openai.com/v1/chat/completions",
+	}
+
 	// CLI flags
 	attachments     stringFlags // -a flag - see in init()
 	instructionText = flag.String("i", "", "instruction to LLM in text form")
 	instructionPath = flag.String("f", "", "path to file with instructions to LLM")
 	keyPath         = flag.String("k", filepath.Join(homePath(), defaultKeyFile), "path to API key file")
-	model           = flag.String("m", getModel(defaultModel), "model name")
-	timeout         = flag.Int("t", 600, "API timeout in seconds")
+	model           = flag.String("m", getModel(defaultModel),
+		"model name; supports <model>@<provider> where <provider> is openai|ollama and chooses the right URL")
+	timeout = flag.Int("t", 600, "API timeout in seconds")
 	// stdin/args/combine/auto
 	promptSrc = flag.String("p", string(auto), "prompt source, accepts: "+
 		strings.Join([]string{string(auto), string(combine), string(argsOnly), string(stdinOnly)}, ", "))
 	performanceLog perfLogFlag // -perflog flag - see in init()
 	raw            = flag.Bool("r", false, "if set, expects raw messages on stdin in JSON format")
 	stream         = flag.Bool("s", false, "if set, use streaming API")
-	url            = flag.String("u", "https://api.openai.com/v1/chat/completions", "AI API url")
+	url            = flag.String("u", providerToURL["openai"], "AI API url")
 	verbose        = flag.Bool("v", false, "if set, verbose mode shows timings")
 )
 
@@ -240,13 +246,28 @@ func debugWriter() io.Writer {
 	return io.Discard
 }
 
+func defineModelAndURL(modelArg string, urlArg string) (string, string, error) {
+	model, provider, found := strings.Cut(modelArg, "@")
+	if found {
+		url, found := providerToURL[provider]
+		if !found {
+			return "", "", fmt.Errorf("%s: unknown provider", provider)
+		}
+		return model, url, nil
+	}
+	return modelArg, urlArg, nil
+}
+
 func prepare() (aiClient, []*genai.Message, error) {
 	key, err := apiKey()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	var res aiClient = genai.NewClient(*url, key, *model).SetStreaming(*stream).
+	m, u, err := defineModelAndURL(*model, *url)
+	if err != nil {
+		return nil, nil, err
+	}
+	var res aiClient = genai.NewClient(u, key, m).SetStreaming(*stream).
 		SetTimeout(time.Duration(*timeout) * time.Second).SetTracer(debugWriter())
 	if *raw {
 		res = &rawModeClientDecorator{res}
