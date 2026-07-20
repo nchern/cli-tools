@@ -189,7 +189,7 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*g
 			return nil, err
 		}
 		name := filepath.Base(path)
-		content := fmt.Sprintf("file: %s\n%s", name, string(b))
+		content := fmt.Sprintf("attached file: %s\n%s", name, string(b))
 		messages = append(messages, genai.NewMessage(genai.User, content))
 	}
 	messages = append(messages, genai.NewMessage(genai.User, prompt))
