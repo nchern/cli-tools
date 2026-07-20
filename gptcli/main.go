@@ -184,12 +184,18 @@ func mkMessages(instructions string, prompt string, attachPaths ...string) ([]*g
 		messages = append(messages, genai.NewMessage(genai.System, instructions))
 	}
 	for _, path := range attachPaths {
+		name := ""
+		path, alias, found := strings.Cut(filepath.Base(path), ":")
+		if found {
+			name = alias
+		} else {
+			name = filepath.Base(path)
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
-		name := filepath.Base(path)
-		content := fmt.Sprintf("attached file: %s\n%s", name, string(b))
+		content := fmt.Sprintf("attached file[%s]:\n%s", name, string(b))
 		messages = append(messages, genai.NewMessage(genai.User, content))
 	}
 	messages = append(messages, genai.NewMessage(genai.User, prompt))
