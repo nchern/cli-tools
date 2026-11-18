@@ -29,7 +29,7 @@ const (
 type dateFlag time.Time
 
 func (d *dateFlag) String() string {
-	if d == nil || time.Time(*d) == zeroTime {
+	if d == nil || time.Time(*d).Equal(zeroTime) {
 		return "empty"
 	}
 	return time.Time(*d).String()
@@ -166,7 +166,7 @@ func errorToExitCode(err error) int {
 	return 1
 }
 
-func dieOnNetError(v ...interface{}) {
+func dieOnNetError(v ...any) {
 	for _, it := range v {
 		switch err := it.(type) {
 		case error:
@@ -177,12 +177,12 @@ func dieOnNetError(v ...interface{}) {
 
 type nwTimeoutFatalLogger struct{}
 
-func (l *nwTimeoutFatalLogger) Printf(format string, v ...interface{}) {
+func (l *nwTimeoutFatalLogger) Printf(format string, v ...any) {
 	dieOnNetError(v...)
 	log.Printf(format, v...)
 }
 
-func (l *nwTimeoutFatalLogger) Println(v ...interface{}) {
+func (l *nwTimeoutFatalLogger) Println(v ...any) {
 	dieOnNetError(v...)
 	log.Println(v...)
 }
