@@ -1,0 +1,18 @@
+# Use with: mailexpire -config /path/to/config.toml -clean
+# Default configuration path: $HOME/.mailexpire/config.toml
+# Fill in all values before running cleanup.
+
+# IMAP over TLS, with certificate verification (e.g. "imap.example.org:993").
+addr = ""
+# IMAP login name (e.g. "me@example.org").
+user = ""
+
+# Path to a file containing the password, not the password itself.
+# A leading ~/ expands to your home directory. Environment variables and
+# ~username are not expanded. Relative paths use the current working directory.
+# Example: "~/.secrets/imap-password"
+pass = ""
+
+# Cleanup searches every listed mailbox. At least one is required.
+# Example: ["INBOX", "Archive", "Old Notifications"]
+mailboxes = []
