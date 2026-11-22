@@ -176,7 +176,7 @@ func errorToExitCode(err error) int {
 	if os.IsTimeout(err) {
 		return exitUnavailable
 	}
-	if opErr, ok := err.(*net.OpError); ok {
+	if opErr, ok := errors.AsType[*net.OpError](err); ok {
 		if opErr.Temporary() || opErr.Timeout() {
 			return exitUnavailable
 		}
@@ -218,7 +218,6 @@ func init() {
 
 	flag.Var(&attachments, "a", "attach a file to prompt; multiple attachments are supported")
 	flag.Var(&performanceLog, "perflog", "enables profiling: will write perf stats into a given log")
-	flag.Parse()
 }
 
 type aiClient interface {
@@ -304,6 +303,8 @@ type state struct {
 }
 
 func main() {
+	flag.Parse()
+
 	ai, messages, err := prepare()
 	dieIf(err)
 	cstat, err := ai.Complete(messages, os.Stdout)

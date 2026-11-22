@@ -87,7 +87,6 @@ func TestParseHumanShould(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture loop variable
 		t.Run(tt.given, func(t *testing.T) {
 			got, err := Human(now, tt.given)
 			if err != nil {
@@ -112,7 +111,6 @@ func TestParseHumanShouldFailOn(t *testing.T) {
 	}
 
 	for _, given := range tests {
-		given := given
 		t.Run(given, func(t *testing.T) {
 			_, err := Human(now, given)
 			if err == nil {

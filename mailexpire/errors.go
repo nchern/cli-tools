@@ -14,9 +14,9 @@ func errorToExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	var netErr net.Error
+	netErr, ok := errors.AsType[net.Error](err)
 	if errors.Is(err, os.ErrDeadlineExceeded) ||
-		(errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary())) {
+		(ok && (netErr.Timeout() || netErr.Temporary())) {
 		return exitUnavailable
 	}
 	return 1

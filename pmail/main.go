@@ -4,9 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"maps"
 	"net/mail"
 	"os"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/DusanKasan/parsemail"
@@ -60,11 +61,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "\nUsage:\n\n\t%s <mail-part>\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "\nParts:")
 
-	sortedCmds := []string{}
-	for cmd := range commands {
-		sortedCmds = append(sortedCmds, cmd)
-	}
-	sort.Strings(sortedCmds)
+	sortedCmds := slices.Sorted(maps.Keys(commands))
 	for _, cmd := range sortedCmds {
 		fmt.Fprintf(os.Stderr, "\t%s\n", cmd)
 	}

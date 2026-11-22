@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ func init() {
 
 		usage()
 	}
-	flag.Parse()
 }
 
 // A Reader implements convenience methods for reading requests
@@ -103,12 +103,7 @@ func trim(s []byte) []byte {
 // returns a []byte instead of a string.
 func (r *Reader) ReadContinuedLineBytes() ([]byte, error) {
 	line, err := r.readContinuedLineSlice(noValidation)
-	if line != nil {
-		buf := make([]byte, len(line))
-		copy(buf, line)
-		line = buf
-	}
-	return line, err
+	return bytes.Clone(line), err
 }
 
 // readContinuedLineSlice reads continued lines from the reader buffer,
@@ -189,6 +184,7 @@ func isASCIILetter(b byte) bool {
 }
 
 func main() {
+	flag.Parse()
 	var err error
 	r := NewReader(bufio.NewReader(os.Stdin))
 	r.delim = []byte(*delimeter)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -158,7 +159,7 @@ func errorToExitCode(err error) int {
 	if os.IsTimeout(err) {
 		return exitUnavailable
 	}
-	if opErr, ok := err.(*net.OpError); ok {
+	if opErr, ok := errors.AsType[*net.OpError](err); ok {
 		if opErr.Temporary() || opErr.Timeout() {
 			return exitUnavailable
 		}
