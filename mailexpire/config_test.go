@@ -138,7 +138,7 @@ func TestIMAPLoginWithHomePasswordPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cleanIMAPWithTLS(cfg, []string{id}, true, io.Discard, trust, time.Second); err != nil {
+	if err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), true, io.Discard, trust, time.Second); err != nil {
 		t.Fatal(err)
 	}
 }

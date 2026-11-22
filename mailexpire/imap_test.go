@@ -29,6 +29,17 @@ type imapStep struct {
 	reply string
 }
 
+func testRetentionFile(t *testing.T, ids ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	entries := make([]entry, 0, len(ids))
+	for _, id := range ids {
+		entries = append(entries, entry{time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), id})
+	}
+	writeTestRetentionEntries(t, dir, entries)
+	return filepath.Join(dir, retentionFilename)
+}
+
 func imapTestTLS(t *testing.T) (*tls.Config, *tls.Config) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -177,7 +188,7 @@ func TestCleanIMAPExactAcrossMailboxes(t *testing.T) {
 	cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
 	cfg.Mailboxes = []string{"INBOX", "Archive"}
 	var out bytes.Buffer
-	if err := cleanIMAPWithTLS(cfg, []string{id, "<absent@example.org>"}, false, &out, trust, time.Second); err != nil {
+	if err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id, "<absent@example.org>"), time.Now(), false, &out, trust, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	for _, mailbox := range cfg.Mailboxes {
@@ -199,7 +210,7 @@ func TestCleanIMAPDryRunWithoutUIDPLUS(t *testing.T) {
 		imapFetchStep("42", imapFetchReply(1, 42, "Message-ID: "+id+"\r\n\r\n")), imapLogoutStep())
 	cfg, trust := imapFakeServer(t, "", steps)
 	var out bytes.Buffer
-	if err := cleanIMAPWithTLS(cfg, []string{id}, true, &out, trust, time.Second); err != nil {
+	if err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), true, &out, trust, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	want := fmt.Sprintf("would delete mailbox=%q id=%q uid=42\n", "INBOX", id)
@@ -210,13 +221,18 @@ func TestCleanIMAPDryRunWithoutUIDPLUS(t *testing.T) {
 
 func TestCleanIMAPRequiresUIDPLUS(t *testing.T) {
 	cfg, trust := imapFakeServer(t, "", imapLoginSteps("", true))
-	err := cleanIMAPWithTLS(cfg, []string{"<target@example.org>"}, false, io.Discard, trust, time.Second)
+	err := cleanIMAPWithTLS(cfg, testRetentionFile(t, "<target@example.org>"), time.Now(), false, io.Discard, trust, time.Second)
 	if err == nil || !strings.Contains(err.Error(), "UIDPLUS") {
 		t.Fatalf("expected UIDPLUS error, got %v", err)
 	}
 }
 
 func TestCleanIMAPAbsent(t *testing.T) {
+	dir := t.TempDir()
+	state := "2000-01-01T00:00:00Z\t<absent@example.org>\n2999-01-01T00:00:00Z\t<future@example.org>\n"
+	if err := os.WriteFile(filepath.Join(dir, retentionFilename), []byte(state), privateFileMode); err != nil {
+		t.Fatal(err)
+	}
 	steps := imapLoginSteps("UIDPLUS", true)
 	for _, mailbox := range []string{"INBOX", "Archive"} {
 		steps = append(steps, imapSelectStep(mailbox, false), imapSearchStep("<absent@example.org>", ""))
@@ -225,11 +241,15 @@ func TestCleanIMAPAbsent(t *testing.T) {
 	cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
 	cfg.Mailboxes = []string{"INBOX", "Archive"}
 	var out bytes.Buffer
-	if err := cleanIMAPWithTLS(cfg, []string{"<absent@example.org>"}, false, &out, trust, time.Second); err != nil {
+	if err := cleanExpired(dir, cfg, false, &out, time.Now(), trust, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if out.Len() != 0 {
 		t.Fatalf("absent ID produced output: %q", out.String())
+	}
+	remaining, err := readRetentionList(dir)
+	if err != nil || len(remaining) != 1 || remaining["<future@example.org>"].IsZero() {
+		t.Fatalf("remaining=%v, err=%v", remaining, err)
 	}
 }
 
@@ -244,7 +264,7 @@ func TestCleanIMAPCommandFailures(t *testing.T) {
 			steps := append([]imapStep(nil), success[:i+1]...)
 			steps[i].reply = "$tag NO rejected\r\n"
 			cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
-			err := cleanIMAPWithTLS(cfg, []string{id}, false, io.Discard, trust, time.Second)
+			err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), false, io.Discard, trust, time.Second)
 			if err == nil {
 				t.Fatal("server failure was not propagated")
 			}
@@ -266,7 +286,7 @@ func TestCleanIMAPFetchFailures(t *testing.T) {
 			steps := append(imapLoginSteps("UIDPLUS", true), imapSelectStep("INBOX", false),
 				imapSearchStep(id, "42"), imapFetchStep("42", reply))
 			cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
-			if err := cleanIMAPWithTLS(cfg, []string{id}, false, io.Discard, trust, time.Second); err == nil {
+			if err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), false, io.Discard, trust, time.Second); err == nil {
 				t.Fatal("invalid header response was accepted")
 			}
 		})
@@ -284,7 +304,7 @@ func TestCleanIMAPLaterMailboxFailure(t *testing.T) {
 	cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
 	cfg.Mailboxes = []string{"INBOX", "Archive"}
 	var out bytes.Buffer
-	err := cleanIMAPWithTLS(cfg, []string{id}, false, &out, trust, time.Second)
+	err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), false, &out, trust, time.Second)
 	if err == nil || !strings.Contains(err.Error(), "Archive") {
 		t.Fatalf("later mailbox failure was not propagated: %v", err)
 	}
@@ -304,7 +324,7 @@ func TestCleanIMAPOutputFailure(t *testing.T) {
 	steps := append(imapLoginSteps("", false), imapSelectStep("INBOX", true), imapSearchStep(id, "42"),
 		imapFetchStep("42", imapFetchReply(1, 42, "Message-ID: "+id+"\r\n\r\n")))
 	cfg, trust := imapFakeServer(t, "", steps)
-	if err := cleanIMAPWithTLS(cfg, []string{id}, true, imapFailWriter{}, trust, time.Second); err == nil {
+	if err := cleanIMAPWithTLS(cfg, testRetentionFile(t, id), time.Now(), true, imapFailWriter{}, trust, time.Second); err == nil {
 		t.Fatal("output failure was not propagated")
 	}
 }
@@ -314,7 +334,7 @@ func TestCleanIMAPReadOnlyMailbox(t *testing.T) {
 	step.reply = strings.ReplaceAll(step.reply, "READ-WRITE", "READ-ONLY")
 	steps := append(imapLoginSteps("UIDPLUS", true), step)
 	cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
-	err := cleanIMAPWithTLS(cfg, []string{"<target@example.org>"}, false, io.Discard, trust, time.Second)
+	err := cleanIMAPWithTLS(cfg, testRetentionFile(t, "<target@example.org>"), time.Now(), false, io.Discard, trust, time.Second)
 	if err == nil || !strings.Contains(err.Error(), "read-only") {
 		t.Fatalf("expected read-only error, got %v", err)
 	}
@@ -329,14 +349,7 @@ func TestCleanIMAPStalledLiteral(t *testing.T) {
 		step.reply = "* 1 FETCH (UID 42 BODY[HEADER.FIELDS (MESSAGE-ID)] {100}\r\nMessage-ID: "
 		steps = append(steps, step)
 		cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
-		lst, err := readRetentionList(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cleanup := func(cfg config, ids []string, dryRun bool, out io.Writer) error {
-			return cleanIMAPWithTLS(cfg, ids, dryRun, out, trust, 100*time.Millisecond)
-		}
-		err = cleanExpired(dir, lst, cfg, false, io.Discard, time.Now(), cleanup)
+		err := cleanExpired(dir, cfg, false, io.Discard, time.Now(), trust, 100*time.Millisecond)
 		t.Fatalf("expected fatal logger to exit the subprocess; cleanup returned %v", err)
 	}
 
@@ -382,7 +395,7 @@ func TestCleanIMAPVerifiesTLS(t *testing.T) {
 		}
 	}()
 	cfg := config{Addr: listener.Addr().String(), Pass: imapPasswordFile(t)}
-	if err := cleanIMAP(cfg, nil, false, io.Discard); err == nil || !strings.Contains(err.Error(), "certificate") {
+	if err := cleanIMAP(cfg, testRetentionFile(t, "<target@example.org>"), time.Now(), false, io.Discard); err == nil || !strings.Contains(err.Error(), "certificate") {
 		t.Fatalf("expected certificate verification failure, got %v", err)
 	}
 	<-done
@@ -390,7 +403,22 @@ func TestCleanIMAPVerifiesTLS(t *testing.T) {
 
 func TestCleanIMAPPasswordReadFailure(t *testing.T) {
 	cfg := config{Pass: filepath.Join(t.TempDir(), "missing")}
-	if err := cleanIMAP(cfg, nil, false, io.Discard); err == nil || !strings.Contains(err.Error(), "password") {
+	if err := cleanIMAP(cfg, testRetentionFile(t, "<target@example.org>"), time.Now(), false, io.Discard); err == nil || !strings.Contains(err.Error(), "password") {
 		t.Fatalf("expected password read error, got %v", err)
+	}
+}
+
+func TestCleanIMAPRetentionReadError(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dry-run=%v", dryRun), func(t *testing.T) {
+			id := "<absent@example.org>"
+			steps := append(imapLoginSteps("UIDPLUS", !dryRun), imapSelectStep("INBOX", dryRun), imapSearchStep(id, ""))
+			cfg, trust := imapFakeServer(t, "UIDPLUS", steps)
+			path := filepath.Join(t.TempDir(), retentionFilename)
+			writeConfig(t, path, "2000-01-01T00:00:00Z\t"+id+"\ninvalid record\n")
+			if err := cleanIMAPWithTLS(cfg, path, time.Now(), dryRun, io.Discard, trust, time.Second); err == nil {
+				t.Fatal("malformed retention record was not propagated")
+			}
+		})
 	}
 }

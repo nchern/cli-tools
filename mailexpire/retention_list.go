@@ -2,12 +2,12 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +17,7 @@ import (
 // <expiration: RFC3339 UTC, whole seconds><TAB><RFC Message-ID>
 // Reading also accepts fractional seconds and explicit timezone offsets.
 // Blank lines and lines beginning with # are ignored.
+// Records must be ordered by expiration, earliest first.
 const (
 	retentionFilename       = "retention.tsv"
 	retentionLockFilename   = "retention.lock"
@@ -29,7 +30,26 @@ const (
 	privateFileMode         = 0600
 )
 
-type retentionList map[string]time.Time
+type entry struct {
+	ExpiresAt time.Time
+	MessageID string
+}
+
+func (e *entry) Parse(s string) error {
+	fields := strings.Split(s, retentionFieldSeparator)
+	if len(fields) != retentionFieldCount {
+		return errors.New("invalid retention record")
+	}
+	if err := validateID(fields[1]); err != nil {
+		return fmt.Errorf("invalid message ID: %w", err)
+	}
+	expires, err := time.Parse(time.RFC3339Nano, fields[0])
+	if err != nil {
+		return fmt.Errorf("invalid expiration: %w", err)
+	}
+	e.ExpiresAt, e.MessageID = expires, fields[1]
+	return nil
+}
 
 func lockRetentionList(dir string) (*os.File, error) {
 	if err := os.MkdirAll(dir, privateDirectoryMode); err != nil {
@@ -49,59 +69,29 @@ func lockRetentionList(dir string) (*os.File, error) {
 	return f, nil
 }
 
-func readRetentionList(dir string) (retentionList, error) {
-	lst := make(retentionList)
-	f, err := os.Open(filepath.Join(dir, retentionFilename))
-	if errors.Is(err, os.ErrNotExist) {
-		return lst, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for line := 1; scanner.Scan(); line++ {
+func readRetentionEntry(scanner *bufio.Scanner) (entry, error) {
+	for scanner.Scan() {
 		text := scanner.Text()
 		if strings.TrimSpace(text) == "" || strings.HasPrefix(text, retentionCommentPrefix) {
 			continue
 		}
-		fields := strings.Split(text, retentionFieldSeparator)
-		if len(fields) != retentionFieldCount {
-			return nil, fmt.Errorf("invalid retention record at line %d", line)
-		}
-		expiresAt, messageID := fields[0], fields[1]
-		if err := validateID(messageID); err != nil {
-			return nil, fmt.Errorf("invalid message ID at line %d: %w", line, err)
-		}
-		expires, err := time.Parse(time.RFC3339Nano, expiresAt)
-		if err != nil {
-			return nil, fmt.Errorf("invalid expiration at line %d: %w", line, err)
-		}
-		if _, exists := lst[messageID]; exists {
-			return nil, fmt.Errorf("duplicate message ID at line %d", line)
-		}
-		lst[messageID] = expires
+		var e entry
+		err := e.Parse(text)
+		return e, err
 	}
-	return lst, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return entry{}, err
+	}
+	return entry{}, io.EOF
 }
 
-func writeRetentionList(dir string, lst retentionList) error {
-	f, err := os.CreateTemp(dir, retentionTempPattern)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	w := bufio.NewWriter(f)
-	if _, err := fmt.Fprintln(w, retentionHeader); err != nil {
-		return err
-	}
-	for _, id := range sortedIDs(lst) {
-		if _, err := fmt.Fprintf(w, "%s%s%s\n",
-			lst[id].UTC().Format(time.RFC3339), retentionFieldSeparator, id); err != nil {
-			return err
-		}
-	}
+func (e entry) Write(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "%s%s%s\n",
+		e.ExpiresAt.UTC().Format(time.RFC3339), retentionFieldSeparator, e.MessageID)
+	return err
+}
+
+func commitRetentionList(dir string, f *os.File, w *bufio.Writer) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
@@ -129,30 +119,74 @@ func syncDirectory(dir string) error {
 	return nil
 }
 
-func sortedIDs(lst retentionList) []string {
-	ids := make([]string, 0, len(lst))
-	for id := range lst {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 func register(dir string, ids []string, duration time.Duration) error {
 	lock, err := lockRetentionList(dir)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	lst, err := readRetentionList(dir)
+	expires := time.Now().UTC().Add(duration).Truncate(time.Second)
+	return rewriteRetentionList(dir, ids, expires)
+}
+
+// A nil ID slice removes expired entries; otherwise merge registrations.
+func rewriteRetentionList(dir string, ids []string, expires time.Time) error {
+	src, err := os.Open(filepath.Join(dir, retentionFilename))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var scanner *bufio.Scanner
+	if src != nil {
+		defer src.Close()
+		scanner = bufio.NewScanner(src)
+	}
+	replacements := make(map[string]struct{}, len(ids))
+	var pending []string
+	for _, id := range ids {
+		if _, exists := replacements[id]; !exists {
+			replacements[id] = struct{}{}
+			pending = append(pending, id)
+		}
+	}
+	f, err := os.CreateTemp(dir, retentionTempPattern)
 	if err != nil {
 		return err
 	}
-	expires := time.Now().UTC().Add(duration)
-	for _, id := range ids {
-		lst[id] = expires
+	defer os.Remove(f.Name())
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	if _, err := fmt.Fprintln(w, retentionHeader); err != nil {
+		return err
 	}
-	return writeRetentionList(dir, lst)
+	for scanner != nil {
+		e, err := readRetentionEntry(scanner)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if !e.ExpiresAt.Before(expires) {
+			for _, id := range pending {
+				if err := (entry{expires, id}).Write(w); err != nil {
+					return err
+				}
+			}
+			pending = nil
+		}
+		if _, replaced := replacements[e.MessageID]; replaced || (ids == nil && !e.ExpiresAt.After(expires)) {
+			continue
+		}
+		if err := e.Write(w); err != nil {
+			return err
+		}
+	}
+	for _, id := range pending {
+		if err := (entry{expires, id}).Write(w); err != nil {
+			return err
+		}
+	}
+	return commitRetentionList(dir, f, w)
 }
 
 func cleanRetentionList(dir, configPath string, dryRun bool, out io.Writer) error {
@@ -165,40 +199,34 @@ func cleanRetentionList(dir, configPath string, dryRun bool, out io.Writer) erro
 		return err
 	}
 	defer lock.Close()
-	q, err := readRetentionList(dir)
+	return cleanExpired(dir, cfg, dryRun, out, time.Now(), nil, imapTimeout)
+}
+
+func cleanExpired(dir string, cfg config, dryRun bool, out io.Writer, now time.Time, tlsConfig *tls.Config, timeout time.Duration) error {
+	path := filepath.Join(dir, retentionFilename)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	return cleanExpired(dir, q, cfg, dryRun, out, time.Now(), cleanIMAP)
-}
-
-type cleanupFunc func(config, []string, bool, io.Writer) error
-
-func cleanExpired(dir string,
-	lst retentionList,
-	cfg config,
-	dryRun bool,
-	out io.Writer,
-	now time.Time,
-	clean cleanupFunc) error {
-
-	var expired []string
-	for _, id := range sortedIDs(lst) {
-		if !lst[id].After(now) {
-			expired = append(expired, id)
-		}
-	}
-	if len(expired) == 0 {
+	defer f.Close()
+	e, err := readRetentionEntry(bufio.NewScanner(f))
+	if errors.Is(err, io.EOF) {
 		return nil
 	}
-	if err := clean(cfg, expired, dryRun, out); err != nil {
+	if err != nil {
+		return err
+	}
+	if e.ExpiresAt.After(now) {
+		return nil
+	}
+	if err := cleanIMAPWithTLS(cfg, path, now, dryRun, out, tlsConfig, timeout); err != nil {
 		return err
 	}
 	if dryRun {
 		return nil
 	}
-	for _, id := range expired {
-		delete(lst, id)
-	}
-	return writeRetentionList(dir, lst)
+	return rewriteRetentionList(dir, nil, now)
 }

@@ -38,6 +38,7 @@ mailboxes = ["INBOX", "Archive"]
 ## Cleanup
 
 - State: `~/.mailexpire/retention.tsv`, containing whole-second UTC expirations (e.g. `2026-11-21T01:03:25Z`) and IDs.
+- Entries are ordered by expiration, earliest first. Registration merges entries in one pass; cleanup stops discovering expired IDs at the first future entry.
 - Searches all configured mailboxes and deletes every exact Message-ID match.
 - Requires verified TLS and `UIDPLUS` for targeted expunge, avoiding unrelated messages.
 - Successful cleanup removes expired entries, including IDs absent from all configured mailboxes.

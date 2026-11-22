@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,12 +24,12 @@ const (
 	messageIDHeader   = "Message-ID"
 )
 
-func cleanIMAP(cfg config, ids []string, dryRun bool, out io.Writer) error {
-	return cleanIMAPWithTLS(cfg, ids, dryRun, out, nil, imapTimeout)
+func cleanIMAP(cfg config, retentionPath string, cutoff time.Time, dryRun bool, out io.Writer) error {
+	return cleanIMAPWithTLS(cfg, retentionPath, cutoff, dryRun, out, nil, imapTimeout)
 }
 
 // The TLS configuration and timeout are injectable for local protocol tests.
-func cleanIMAPWithTLS(cfg config, ids []string, dryRun bool, out io.Writer, tlsConfig *tls.Config, timeout time.Duration) error {
+func cleanIMAPWithTLS(cfg config, retentionPath string, cutoff time.Time, dryRun bool, out io.Writer, tlsConfig *tls.Config, timeout time.Duration) error {
 	pass, err := os.ReadFile(cfg.Pass)
 	if err != nil {
 		return fmt.Errorf("read IMAP password: %w", err)
@@ -65,7 +67,7 @@ func cleanIMAPWithTLS(cfg config, ids []string, dryRun bool, out io.Writer, tlsC
 		}
 	}
 	for _, mailbox := range cfg.Mailboxes {
-		if err := cleanMailbox(c, conn, mailbox, ids, dryRun, out); err != nil {
+		if err := cleanMailbox(c, conn, mailbox, retentionPath, cutoff, dryRun, out); err != nil {
 			return fmt.Errorf("mailbox %q: %w", mailbox, err)
 		}
 	}
@@ -80,7 +82,7 @@ func resetIMAPDeadline(conn net.Conn, timeout time.Duration) error {
 	return conn.SetDeadline(time.Now().Add(timeout))
 }
 
-func cleanMailbox(c *client.Client, conn net.Conn, mailbox string, ids []string, dryRun bool, out io.Writer) error {
+func cleanMailbox(c *client.Client, conn net.Conn, mailbox, retentionPath string, cutoff time.Time, dryRun bool, out io.Writer) error {
 	if err := resetIMAPDeadline(conn, c.Timeout); err != nil {
 		return err
 	}
@@ -91,7 +93,24 @@ func cleanMailbox(c *client.Client, conn net.Conn, mailbox string, ids []string,
 	if !dryRun && status.ReadOnly {
 		return fmt.Errorf("mailbox is read-only")
 	}
-	for _, id := range ids {
+	f, err := os.Open(retentionPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for {
+		e, err := readRetentionEntry(scanner)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if e.ExpiresAt.After(cutoff) {
+			break
+		}
+		id := e.MessageID
 		uids, err := matchingUIDs(c, conn, id)
 		if err != nil {
 			return fmt.Errorf("message %q: %w", id, err)

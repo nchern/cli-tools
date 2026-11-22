@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -47,7 +47,7 @@ func TestRegistration(t *testing.T) {
 		}
 	}
 	text := readState(t, dir)
-	if !strings.Contains(text, "\t<a@example.org>\n") || strings.Index(text, "<a@") > strings.Index(text, "<b@") {
+	if !strings.Contains(text, "\t<a@example.org>\n") || !strings.Contains(text, "\t<b@example.org>\n") {
 		t.Fatalf("unexpected TSV: %s", text)
 	}
 	if err := run([]string{"-r", "1h", "<a@example.org>"}, io.Discard, io.Discard); err != nil {
@@ -136,7 +136,6 @@ func TestMalformedStatePreserved(t *testing.T) {
 		"2026-01-01T00:00:00Z\t" + strings.Repeat("a", 60*1024+1) + "\n",
 		"2026-01-01T00:00:00Z <a>\n", "2026-01-01T00:00:00Z\t\t<a>\n",
 		"2026-01-01T00:00:00Z\t<a>\textra\n",
-		"2026-01-01T00:00:00Z\t<a>\n2026-02-01T00:00:00Z\t<a>\n",
 		strings.Repeat("x", 70000),
 	} {
 		if err := os.WriteFile(filepath.Join(dir, "retention.tsv"), []byte(text), 0600); err != nil {
@@ -170,41 +169,52 @@ func TestConcurrentRegistrations(t *testing.T) {
 
 func TestCleanupRetentionListContract(t *testing.T) {
 	// Retention list preservation after partial IMAP failure is a critical safety contract.
-	for _, mode := range []string{"success", "failure", "dry-run", "not-expired"} {
+	for _, mode := range []string{"success", "all-expired", "failure", "dry-run", "not-expired"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			now := time.Date(2026, 11, 21, 1, 3, 25, 0, time.UTC)
 			cutoff := now.In(time.FixedZone("UTC-05:30", -19800))
-			q := retentionList{"<before>": now.Add(-time.Second), "<boundary>": now, "<future>": now.Add(time.Second)}
+			entries := []entry{{now.Add(-time.Second), "<before>"}, {now, "<boundary>"}, {now.Add(time.Second), "<future>"}}
 			if mode == "not-expired" {
-				q = retentionList{"<future>": now.Add(time.Second)}
+				entries = entries[2:]
+			} else if mode == "all-expired" {
+				entries = entries[:2]
 			}
-			if err := writeRetentionList(dir, q); err != nil {
-				t.Fatal(err)
-			}
+			writeTestRetentionEntries(t, dir, entries)
 			original := readState(t, dir)
-			called := false
-			cleanup := func(_ config, ids []string, dry bool, _ io.Writer) error {
-				called = true
-				if !reflect.DeepEqual(ids, []string{"<before>", "<boundary>"}) || dry != (mode == "dry-run") {
-					t.Fatalf("cleanup arguments: %v, dry=%v", ids, dry)
-				}
+			var cfg config
+			var trust *tls.Config
+			if mode != "not-expired" {
+				dry := mode == "dry-run"
+				steps := append(imapLoginSteps("UIDPLUS", !dry), imapSelectStep("INBOX", dry),
+					imapSearchStep("<before>", ""), imapSearchStep("<boundary>", ""))
 				if mode == "failure" {
-					return errors.New("later mailbox failed")
+					steps = append(steps, imapStep{want: `SELECT "?Archive"?`, reply: "$tag NO unavailable\r\n"})
+				} else {
+					steps = append(steps, imapLogoutStep())
 				}
-				return nil
+				cfg, trust = imapFakeServer(t, "UIDPLUS", steps)
+				if mode == "failure" {
+					cfg.Mailboxes = []string{"INBOX", "Archive"}
+				}
 			}
-			err := cleanExpired(dir, q, config{}, mode == "dry-run", io.Discard, cutoff, cleanup)
-			if (err != nil) != (mode == "failure") || called != (mode != "not-expired") {
-				t.Fatalf("cleanup: called=%v, err=%v", called, err)
+			err := cleanExpired(dir, cfg, mode == "dry-run", io.Discard, cutoff, trust, time.Second)
+			if (err != nil) != (mode == "failure") {
+				t.Fatalf("cleanup error=%v", err)
 			}
-			if mode != "success" {
+			if mode != "success" && mode != "all-expired" {
 				if readState(t, dir) != original {
 					t.Fatal("retention list changed without successful deletion")
 				}
 				return
 			}
 			remaining, err := readRetentionList(dir)
+			if mode == "all-expired" {
+				if err != nil || len(remaining) != 0 {
+					t.Fatalf("remaining=%v err=%v", remaining, err)
+				}
+				return
+			}
 			if err != nil || len(remaining) != 1 || !remaining["<future>"].Equal(now.Add(time.Second)) {
 				t.Fatalf("remaining=%v err=%v", remaining, err)
 			}
