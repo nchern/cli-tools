@@ -1,6 +1,6 @@
 module gcal
 
-go 1.22
+go 1.26
 
 require (
 	golang.org/x/oauth2 v0.23.0
